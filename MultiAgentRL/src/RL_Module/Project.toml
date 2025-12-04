@@ -1,0 +1,15 @@
+name = "RL_Module"
+uuid = "071bb340-0fbe-4822-adfe-e5228d6bba15"
+version = "0.1.0"
+authors = ["Jason Eckstein <jekyllstein@gmail.com>"]
+
+[deps]
+Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
+TabularRL = "70984187-0053-49a1-8db7-ddab96a995ff"
+
+[sources]
+TabularRL = {rev = "standardize-fcann", subdir = "TabularRL.jl", url = "https://github.com/jekyllstein/Reinforcement-Learning-Sutton-Barto-Exercise-Solutions"}
+
+[compat]
+Reexport = "1.2.2"
+TabularRL = "0.1.0"
