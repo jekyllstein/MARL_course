@@ -30,26 +30,26 @@ md"""
 # ╔═╡ f6de9a64-7dee-4291-815b-7a891c52a146
 begin
 	abstract type AbstractMultiAgentTransition{T<:Real, N} end
-	abstract type AbstractMultiAgentTabularTransition{T<:Real, N} <: AbstractMultiAgentTransition{T, N} end
+	abstract type AbstractTabularMultiAgentTransition{T<:Real, N} <: AbstractMultiAgentTransition{T, N} end
 	
-	struct MultiAgentTabularTransition{T<:Real, N, Np1, ST<:Union{Int64, SparseVector{T, Int64}}, RT<:Union{T, Vector{T}}} <: AbstractMultiAgentTabularTransition{T, N}
+	struct TabularMultiAgentTransition{T<:Real, N, Np1, ST<:Union{Int64, SparseVector{T, Int64}}, RT<:Union{T, Vector{T}}} <: AbstractTabularMultiAgentTransition{T, N}
 		state_transition_map::Array{ST, Np1}
 		reward_transition_map::Array{NTuple{N, RT}, Np1}
 
-		function MultiAgentTabularTransition(state_transition_map, reward_transition_map)
+		function TabularMultiAgentTransition(state_transition_map::Array{ST, Np1}, reward_transition_map::Array{NTuple{N, RT}, Np1}) where {T<:Real, N, Np1, ST<:Union{Int64, SparseVector{T, Int64}}, RT <: Union{T, Vector{T}}}
 			@assert N == Np1 - 1
 			new{T, N, Np1, ST, RT}(state_transition_map, reward_transition_map)
 		end
 	end
 	
-	const MultiAgentTabularDeterministicTransition{T<:Real, N, Np1} = MultiAgentTabularTransition{T, N, Np1, Int64, T}
-	const MultiAgentTabularStochasticTransition{T<:Real, N, Np1} = MultiAgentTabularTransition{T, N, Np1, SparseVector{T, Int64}, Vector{T}}
+	const TabularMultiAgentDeterministicTransition{T<:Real, N, Np1} = TabularMultiAgentTransition{T, N, Np1, Int64, T}
+	const TabularMultiAgentStochasticTransition{T<:Real, N, Np1} = TabularMultiAgentTransition{T, N, Np1, SparseVector{T, Int64}, Vector{T}}
 	
-	MultiAgentTabularDeterministicTransition(m1, m2) = MultiAgentTabularTransition(m1, m2)
+	TabularMultiAgentDeterministicTransition(m1, m2) = TabularMultiAgentTransition(m1, m2)
 	
-	MultAgentTabularStochasticTransition(m1, m2) = MultiAgentTabularTransition(m1, m2)
+	TabularMultAgentStochasticTransition(m1, m2) = TabularMultiAgentTransition(m1, m2)
 
-	function (ptf::MultiAgentTabularDeterministicTransition{T, N, Np1})(i_s::Integer, a::NTuple{N, I}) where {T<:Real, N, Np1, I<:Integer}
+	function (ptf::TabularMultiAgentDeterministicTransition{T, N, Np1})(i_s::Integer, a::NTuple{N, I}) where {T<:Real, N, Np1, I<:Integer}
 		i_s′ = state_transition_map[a..., i_s]
 		r = reward_transition_map[a..., i_s]
 		(r, i_s′)
@@ -57,12 +57,12 @@ begin
 end
 
 # ╔═╡ 146c7758-657c-4f95-a539-44273e754412
-calc_index(i_s::Integer, a::NTuple{N, I}, ptf::MultiAgentTabularTransition{T, N, Np1, ST, RT}) where {T<:Real, N, I<:Integer, Np1, ST, RT} = LinearIndices(ptf.state_transition_map)[a..., i_s]
+calc_index(i_s::Integer, a::NTuple{N, I}, ptf::TabularMultiAgentTransition{T, N, Np1, ST, RT}) where {T<:Real, N, I<:Integer, Np1, ST, RT} = LinearIndices(ptf.state_transition_map)[a..., i_s]
 
 # ╔═╡ fe796b4e-fb05-4071-ad4b-7e3ce58092c4
 #convert a multi-agent transition into an MDP transition with the action space begin each joint action and the reward transformed into a single scalar value
-function TabularRL.TabularDeterministicTransition(ptf::MultiAgentTabularDeterministicTransition{T, N, Np1}, reward_function::Function) where {T<:Real, N, Np1}
-	dims = size(state_transition_map)
+function TabularRL.TabularDeterministicTransition(ptf::TabularMultiAgentDeterministicTransition{T, N, Np1}, reward_function::Function) where {T<:Real, N, Np1}
+	dims = size(ptf.state_transition_map)
 	num_states = dims[Np1]
 	num_actions = dims[1:N]
 	total_actions = prod(num_actions)
@@ -73,6 +73,44 @@ function TabularRL.TabularDeterministicTransition(ptf::MultiAgentTabularDetermin
 		reward_transition_map[i] = reward_function(reward_intermediate[i])
 	end
 	TabularDeterministicTransition(state_transition_map, reward_transition_map)
+end
+
+# ╔═╡ 75726eb9-eb0e-42a3-a648-dbfce92cbd6e
+abstract type AbstractMultiAgentMDP{T<:Real, S, A, N, P<:AbstractMultiAgentTransition{T, N}, F<:Function} end
+
+# ╔═╡ 79888a7b-c604-4db2-932a-ee9bfd378d9e
+begin
+	struct TabularMultiAgentMDP{T<:Real, S, A, N, P<:AbstractTabularMultiAgentTransition{T, N}, F<:Function} <: AbstractMultiAgentMDP{T, S, A, N, P, F}
+		states::Vector{S}
+		agent_actions::NTuple{N, Vector{A}}
+		ptf::P
+		initialize_state_index::F
+		terminal_states::BitVector
+		state_index::Dict{S, Int64}
+		action_index::NTuple{N, Dict{A, Int64}}
+	end
+
+	TabularMultiAgentMDP(states::Vector{S}, agent_actions::NTuple{N, Vector{A}}, ptf::P, initialize_state_index::F, terminal_states::BitVector; state_index::Dict{S, Int64} = makelookup(states), action_index::NTuple{N, Dict{A, Int64}} = Tuple(makelookup(a) for a in agent_actions)) where {S, A, N, P<:AbstractTabularMultiAgentTransition, F<:Function} = TabularMultiAgentMDP(states, agent_actions, ptf, initialize_state_index, terminal_states, state_index, action_index)
+
+	TabularMultiAgentMDP(states::Vector{S}, agent_actions::NTuple{N, Vector{A}}, ptf::P, terminal_states::BitVector; state_index::Dict{S, Int64} = makelookup(states), action_index::NTuple{N, Dict{A, Int64}} = Tuple(makelookup(a) for a in agent_actions)) where {S, A, N, P<:AbstractTabularMultiAgentTransition} = TabularMultiAgentMDP(states, agent_actions, ptf, Returns(1:length(states)), terminal_states, state_index, action_index)
+
+	TabularMultiAgentMDP(states::Vector{S}, agent_actions::NTuple{N, Vector{A}}, ptf::P, initialize_state_index::F; state_index::Dict{S, Int64} = makelookup(states), action_index::NTuple{N, Dict{A, Int64}} = Tuple(makelookup(a) for a in agent_actions)) where {S, A, N, P<:AbstractTabularMultiAgentTransition, F<:Function} = TabularMultiAgentMDP(states, agent_aactions, ptf, initialize_state_index, BitMatrix(undef, length(states)), state_index, action_index)
+
+	TabularMultiAgentMDP(states::Vector{S}, agent_actions::NTuple{N, Vector{A}}, ptf::P; state_index::Dict{S, Int64} = makelookup(states), action_index::NTuple{N, Dict{A, Int64}} = Tuple(makelookup(a) for a in agent_actions)) where {S, A, N, P<:AbstractTabularMultiAgentTransition} = TabularMultiAgentMDP(states, agent_actions, ptf, Returns(1:length(states)), BitMatrix(undef, length(states)), state_index, action_index)
+end
+
+# ╔═╡ faac6925-b526-4ee0-a84c-b660e6819313
+#convert a tabular multi agent mdp into a tabular mdp using a scalar reward function
+function TabularRL.TabularMDP(mdp::TabularMultiAgentMDP{T, S, A, N, P, F}, reward_function::Function) where {T<:Real, S, A, N, P<:TabularMultiAgentDeterministicTransition, F<:Function}
+	agent_actions = mdp.agent_actions
+	num_actions = Tuple(length(a) for a in agent_actions)
+	joint_action_matrix = Array{A, N}(undef, num_actions...)
+	inds = CartesianIndices(joint_action_matrix)
+	joint_action_list = [Tuple(agent_actions[i][inds[n][i]] for i in 1:N) for n in 1:length(joint_action_matrix)]
+
+	ptf = TabularDeterministicTransition(mdp.ptf, reward_function)
+	
+	TabularMDP(mdp.states, joint_action_list, ptf, mdp.initialize_state_index, mdp.terminal_states; state_index = mdp.state_index)
 end
 
 # ╔═╡ 738eadf8-7bbf-4942-a90d-e8accbb52bea
@@ -91,9 +129,6 @@ begin
 
 	(ptf::StateMultiAgentTransitionDeterministic{T, S, F, N})(s::S, a::NTuple{N, I}) where {T<:Real, S, F<:Function, N, I<:Integer} = ptf.step(s, a)
 end
-
-# ╔═╡ 75726eb9-eb0e-42a3-a648-dbfce92cbd6e
-abstract type AbstractMultiAgentMDP{T<:Real, S, A, N, P<:AbstractMultiAgentTransition{T, N}, F<:Function} end
 
 # ╔═╡ 736aacc0-5592-4439-b8c3-cf76525983a5
 begin
@@ -167,6 +202,8 @@ module LevelBasedForaging
 
 	import ..StateMultiAgentTransitionDeterministic
 	import ..StateMultiAgentMDP
+	import ..TabularMultiAgentTransition
+	import ..TabularMultiAgentMDP
 	
 	abstract type ForagingMove end
 	struct Up <: ForagingMove end
@@ -179,6 +216,8 @@ module LevelBasedForaging
 	const Position = Tuple{Int64, Int64}
 
 	const action_list = [Up(), Down(), Left(), Right(), Collect(), Noop()]
+
+	const action_index = makelookup(action_list)
 	
 	struct ForagingState{N, M}
 		agent_positions::Vector{Position}
@@ -187,9 +226,22 @@ module LevelBasedForaging
 		item_levels::Vector{Int64}
 		available_positions::Set{Position} #keeps track of which positions an agent could move into by excluding squares occupied by items
 		item_collection_positions::Vector{Set{Position}} #keeps a list of the positions that are allowed for collecting each item.  These are just the square adjacent to it
+		item_level_sum::Integer
 
-		ForagingState(agent_positions, item_positions, agent_levels, item_levels, available_positions, item_collection_positions) = new{length(agent_positions), length(item_positions)}(agent_positions, item_positions, agent_levels, item_levels, available_positions, item_collection_positions)
+		ForagingState(agent_positions, item_positions, agent_levels, item_levels, available_positions, item_collection_positions, item_level_sum) = new{length(agent_positions), length(item_positions)}(agent_positions, item_positions, agent_levels, item_levels, available_positions, item_collection_positions, item_level_sum)
 	end
+
+	Base.hash(s::ForagingState) = hash((s.agent_positions, s.item_positions, s.agent_levels, s.item_levels, s.item_level_sum))
+	Base.isequal(s1::ForagingState, s2::ForagingState) = isequal(s1.agent_positions, s2.agent_positions) && isequal(s1.item_positions, s2.item_positions) && isequal(s1.agent_levels, s2.agent_levels) && isequal(s1.item_levels, s2.item_levels) && isequal(s1.item_level_sum, s2.item_level_sum)
+
+	function ForagingState(agent_positions::Vector{Position}, item_positions::Vector{Position}, agent_levels::Vector{Int64}, item_levels::Vector{Int64}, item_level_sum::Integer, x_max::Integer, y_max::Integer)
+		position_set = Set((x, y) for x in 1:x_max for y in 1:y_max)
+		available_positions = setdiff(position_set, item_positions)
+		item_collection_positions = [get_adjacent(p) for p in item_positions]
+		ForagingState(agent_positions, item_positions, agent_levels, item_levels, available_positions, item_collection_positions, item_level_sum)
+	end
+
+	isterm(s::ForagingState) = isempty(s.item_positions)
 
 	function check_adjacent(p1::Position, p2::Position) 
 		((p1[1] == p2[1]) && (abs(p1[2] - p2[2]) == 1)) ||
@@ -204,12 +256,12 @@ module LevelBasedForaging
 		agent_position = s.agent_positions[agent_index]
 		agent_level = s.agent_levels[agent_index]
 		i = 1
-		item_number = 1
+		item_number = 0
 		level = 0
 		for i in 1:M
-			flag = in(agent_position, item_collection_positions[i])
+			flag = in(agent_position, s.item_collection_positions[i])
 			item_number += flag*i
-			level += flag*s.agent_level
+			level += flag*agent_level
 		end
 		return (item_number, level)
 	end
@@ -218,24 +270,22 @@ module LevelBasedForaging
 
 	function attempt_collect(s::ForagingState{N, M}, a::NTuple{N, I}) where {N, M, I<:Integer}
 		item_checks = zeros(Int64, M)
-		agent_checks = Vector{Set{Int64}}(undef, M)
+		agent_checks = [Set{Int64}() for _ in 1:M]
 		rewards = zeros(Float32, N)
 	
 		for i in 1:N
 			(item_number, level) = attempt_collect(s, a[i], i)
-			item_checks[item_number] += level
 			if level > 0
+				item_checks[item_number] += level
 				push!(agent_checks[item_number], i)
 			end
 		end
-
-		item_level_sum = sum(s.item_levels)
 
 		for i in 1:M
 			item_level = s.item_levels[i]
 			success = (item_checks[i] >= item_level)
 			if success
-				denom = item_level_sum * sum(s.agent_levels[j] for j in agent_checks[i])
+				denom = s.item_level_sum * sum(s.agent_levels[j] for j in agent_checks[i])
 				for j in agent_checks[i]
 					rewards[j] = s.agent_levels[j]*item_level / denom
 				end
@@ -254,7 +304,35 @@ module LevelBasedForaging
 	move(p::Position, ::Collect) = p
 
 	move(p::Position, i_a::Integer) = move(p, action_list[i_a])
-	
+
+	function initialize_state(grid_positions, position_set, num_agents, num_items, max_agent_level, max_item_level)
+		p1 = rand(grid_positions)
+
+		excluded_positions = Set((p1, move(p1, Up()), move(p1, Down()), move(p1, Right()), move(p1, Left())))
+		item_positions = [p1]
+		allowed_positions = setdiff(grid_positions, excluded_positions)
+		
+		for i in 2:num_items
+			p = rand(allowed_positions)
+			push!(item_positions, p)
+			setdiff!(allowed_positions, p)
+			for m in (Up(), Down(), Right(), Left())
+				setdiff!(allowed_positions, move(p, m))
+			end
+		end
+
+		agent_positions = [rand(allowed_positions)]
+		for i in 2:num_agents
+			setdiff!(allowed_positions, agent_positions[i-1])
+			push!(agent_positions, rand(allowed_positions))
+		end
+
+		item_levels = [rand(1:max_item_level) for _ in 1:num_items]
+		agent_levels = [rand(1:max_agent_level) for _ in 1:num_agents]
+		
+		ForagingState(agent_positions, item_positions, agent_levels, item_levels, setdiff(position_set, item_positions), [get_adjacent(p) for p in item_positions], sum(item_levels))
+	end
+
 	
 	function make_environment(;width = 8, height = 8, num_agents = 3, num_items = 5, max_agent_level = 2, max_item_level = 4)
 		grid_positions = [(x, y) for x in 1:width for y in 1:height]
@@ -263,51 +341,19 @@ module LevelBasedForaging
 		position_lookup = makelookup(grid_positions)
 		num_positions = length(grid_positions)
 
-		function randomize_location()
-			x = rand(1:width)
-			y = rand(1:height)
-			(x, y)
-		end
-
-		function initialize_state()
-			p1 = randomize_location()
-	
-			excluded_positions = Set((p1, move(p1, Up()), move(p1, Down()), move(p1, Right()), move(p1, Left())))
-			item_positions = [p1]
-			allowed_positions = setdiff(grid_positions, excluded_positions)
-			
-			for i in 2:num_items
-				p = rand(allowed_positions)
-				push!(item_positions, p)
-				setdiff!(allowed_positions, p)
-				for m in (Up(), Down(), Right(), Left())
-					setdiff!(allowed_positions, move(p, m))
-				end
-			end
-	
-			agent_positions = [rand(allowed_positions)]
-			for i in 2:num_agents
-				setdiff!(allowed_positions, agent_positions[i-1])
-				push!(agent_positions, rand(allowed_positions))
-			end
-
-			item_levels = [rand(1:max_agent_level) for _ in 1:num_items]
-			agent_levels = [rand(1:max_agent_level) for _ in 1:num_agents]
-			
-			ForagingState(agent_positions, item_positions, agent_levels, item_levels, setdiff(position_set, item_positions), [get_adjacent(p) for p in item_positions])
-		end
+		init_state() = initialize_state(grid_positions, position_set, num_agents, num_items, max_agent_level, max_item_level)
 
 		clamp_positions(p::Position) = (clamp(p[1], 1, width), clamp(p[2], 1, height))
 
 		function step(s::ForagingState{N, M}, a::NTuple{N, I}) where {N, M, I<:Integer}
 			s′ = deepcopy(s)
-			for i in 1:num_agents
+			for i in 1:N
 				s′.agent_positions[i] = move(s.agent_positions[i], a[i])
 			end
 			
-			for i in 1:num_agents
+			for i in 1:N
 				p′ = s′.agent_positions[i]
-				if !in(p′, s.available_positions) || in(p′, view(s′.agent_positions, 1:i-1)) || in(p′, view(s′.agent_positions, i+1:num_agents))
+				if !in(p′, s.available_positions) || in(p′, view(s′.agent_positions, 1:i-1)) || in(p′, view(s′.agent_positions, i+1:N))
 					s′.agent_positions[i] = s.agent_positions[i]
 				end
 			end
@@ -324,12 +370,137 @@ module LevelBasedForaging
 				end
 			end
 
-			return rewards, ForagingState(s′.agent_positions, s′.item_positions, s′.agent_levels, s′.item_levels, s′.available_positions, s′.item_collection_positions)
+			return rewards, ForagingState(s′.agent_positions, s′.item_positions, s′.agent_levels, s′.item_levels, s′.available_positions, s′.item_collection_positions, s′.item_level_sum)
 		end
 
-		ptf = StateMultiAgentTransitionDeterministic(step, initialize_state(), num_agents)
+		
+
+		ptf = StateMultiAgentTransitionDeterministic(step, init_state(), num_agents)
 			
-		StateMultiAgentMDP(ntuple(Returns(action_list), num_agents), ptf, initialize_state)
+		StateMultiAgentMDP(ntuple(Returns(action_list), num_agents), ptf, init_state, isterm)
+	end
+
+	function make_5_3_environment()
+		width = 11
+		height = 11
+		num_agents = 2
+		num_items = 2
+		max_agent_level = 1
+		max_item_level = 2
+		
+		grid_positions = [(x, y) for x in 1:width for y in 1:height]
+		position_set = Set(grid_positions)
+		position_inds = collect(eachindex(grid_positions))
+		position_lookup = makelookup(grid_positions)
+		num_positions = length(grid_positions)
+
+		function initialize_state()
+			p1 = (5, 5)
+			p2 = (7, 7)
+			item_positions = [p1, p2]
+
+			agent_positions = [(1, 1), (11, 1)]
+	
+			item_levels = [1, 2]
+			agent_levels = [1, 1]
+			
+			ForagingState(agent_positions, item_positions, agent_levels, item_levels, setdiff(position_set, item_positions), [get_adjacent(p) for p in item_positions], 3)
+		end
+
+		clamp_positions(p::Position) = (clamp(p[1], 1, width), clamp(p[2], 1, height))
+
+		function step(s::ForagingState{2, M}, a::NTuple{2, I}) where {M, I<:Integer}
+			isterm(s) && return ([0f0, 0f0], s)
+			s′ = deepcopy(s)
+			for i in 1:2
+				s′.agent_positions[i] = move(s.agent_positions[i], a[i])
+			end
+			
+			for i in 1:2
+				p′ = s′.agent_positions[i]
+				if !in(p′, s.available_positions) || in(p′, view(s′.agent_positions, 1:i-1)) || in(p′, view(s′.agent_positions, i+1:2))
+					s′.agent_positions[i] = s.agent_positions[i]
+				end
+			end
+
+			(rewards, item_checks) = attempt_collect(s, a)
+
+			#modify state for collected item
+			for i in 1:M
+				if isone(item_checks[i])
+					deleteat!(s′.item_positions, i)
+					deleteat!(s′.item_levels, i)
+					deleteat!(s′.item_collection_positions, i)
+					push!(s′.available_positions, s.item_positions[i])
+				end
+			end
+
+			return rewards, ForagingState(s′.agent_positions, s′.item_positions, s′.agent_levels, s′.item_levels, s′.available_positions, s′.item_collection_positions, 3)
+		end
+
+		s0 = initialize_state()
+		states = Vector{ForagingState}()
+		for p1 in s0.available_positions
+			for p2 in setdiff(s0.available_positions, p1)
+				push!(states, ForagingState([p1, p2], s0.item_positions, s0.agent_levels, s0.item_levels, s0.available_positions, s0.item_collection_positions, 3))
+			end
+		end
+
+		s1 = ForagingState(s0.agent_positions, s0.item_positions[[1]], s0.agent_levels, s0.item_levels[[1]], 3, 11, 11)
+		for p1 in s1.available_positions
+			for p2 in setdiff(s1.available_positions, p1)
+				push!(states, ForagingState([p1, p2], s1.item_positions, s1.agent_levels, s1.item_levels, s1.available_positions, s1.item_collection_positions, 3))
+			end
+		end
+
+		s2 = ForagingState(s0.agent_positions, s0.item_positions[[2]], s0.agent_levels, s0.item_levels[[2]], 3, 11, 11)
+		for p1 in s2.available_positions
+			for p2 in setdiff(s2.available_positions, p1)
+				push!(states, ForagingState([p1, p2], s2.item_positions, s2.agent_levels, s2.item_levels, s2.available_positions, s2.item_collection_positions, 3))
+			end
+		end
+
+		s3 = ForagingState(s0.agent_positions, Vector{Position}(), s0.agent_levels, Vector{Int64}(), 3, 11, 11)
+		for p1 in s3.available_positions
+			for p2 in setdiff(s3.available_positions, p1)
+				push!(states, ForagingState([p1, p2], s3.item_positions, s3.agent_levels, s3.item_levels, s3.available_positions, s3.item_collection_positions, 3))
+			end
+		end
+
+		state_index = Dict{ForagingState, Int64}(makelookup(states))
+		
+		actions = ntuple(Returns(action_list), 2)
+		
+		
+		state_transition_map = Array{Int64, 3}(undef, 6, 6, length(states))
+		reward_transition_map = Array{NTuple{2, Float32}, 3}(undef, 6, 6, length(states))
+		terminal_states = BitVector(undef, length(states))
+
+		for i_s in eachindex(states)
+			s = states[i_s]
+			terminal_states[i_s] = isempty(s.item_positions)
+		end
+
+		for i_s in eachindex(states)
+			for i_a1 in 1:6
+				for i_a2 in 1:6
+					s = states[i_s]
+					(rewards, s′) = step(s, (i_a1, i_a2))
+					i_s′ = state_index[s′]
+					state_transition_map[i_a1, i_a2, i_s] = i_s′
+					reward_transition_map[i_a1, i_a2, i_s] = Tuple(rewards)
+				end
+			end
+		end
+
+		ptf = TabularMultiAgentTransition(state_transition_map, reward_transition_map)
+
+		function initialize_state_index()
+			s0 = initialize_state()
+			state_index[s0]
+		end
+			
+		TabularMultiAgentMDP(states, actions, ptf, initialize_state_index, terminal_states; state_index = state_index)
 	end
 end
 
@@ -343,10 +514,31 @@ end
 119*118*3
 
 # ╔═╡ 0eec6fce-eefb-48cb-8b1e-0d77bfcb1129
-const lbf_test = LevelBasedForaging.make_environment(;num_agents = 4)
+const lbf_test = LevelBasedForaging.make_environment(;num_agents = 2)
+
+# ╔═╡ e21da4bb-fd0f-4834-90dd-c1c6c2bc1ee5
+makelookup([lbf_test.initialize_state(), lbf_test.initialize_state()]) |> Dict{LevelBasedForaging.ForagingState, Int64}
 
 # ╔═╡ b8af2286-9780-40a4-82da-4a10e401d4e8
 StateMDP(lbf_test, sum)
+
+# ╔═╡ ac0a9ef8-6fbc-42f2-9433-727b235224e5
+const ex_5_3 = LevelBasedForaging.make_5_3_environment()
+
+# ╔═╡ dac84639-2388-4ee8-9372-aae518a37f17
+const tab_5_3 = TabularMDP(ex_5_3, sum)
+
+# ╔═╡ 514c5c27-baa6-44fd-b14a-e96b2860f826
+tab_5_3.initialize_state_index()
+
+# ╔═╡ 83583ca7-bd96-4589-bbe0-e967849c3bd3
+value_iter = value_iteration_v(tab_5_3, 0.99f0)
+
+# ╔═╡ 41d90bec-6676-4f75-b6df-2b03d8759089
+value_iter.final_value[6188]
+
+# ╔═╡ 047bc4a3-fc4d-4ba4-bf70-dc323dc37937
+0.99^13
 
 # ╔═╡ 1a488045-380d-4441-a6ec-186d3c53420d
 md"""
@@ -1052,8 +1244,10 @@ version = "17.7.0+0"
 # ╠═f6de9a64-7dee-4291-815b-7a891c52a146
 # ╠═146c7758-657c-4f95-a539-44273e754412
 # ╠═fe796b4e-fb05-4071-ad4b-7e3ce58092c4
-# ╠═738eadf8-7bbf-4942-a90d-e8accbb52bea
 # ╠═75726eb9-eb0e-42a3-a648-dbfce92cbd6e
+# ╠═79888a7b-c604-4db2-932a-ee9bfd378d9e
+# ╠═faac6925-b526-4ee0-a84c-b660e6819313
+# ╠═738eadf8-7bbf-4942-a90d-e8accbb52bea
 # ╠═736aacc0-5592-4439-b8c3-cf76525983a5
 # ╠═39182e4e-6ee9-4c14-8b5f-3164e38d5b5a
 # ╠═0bb34d75-0422-4336-9e62-d6431ce2b1c3
@@ -1065,7 +1259,14 @@ version = "17.7.0+0"
 # ╠═5733cd23-5572-4719-9521-dd0c9e0fea02
 # ╠═8288ada4-e13a-4a2f-97f6-86702da21fa7
 # ╠═0eec6fce-eefb-48cb-8b1e-0d77bfcb1129
+# ╠═e21da4bb-fd0f-4834-90dd-c1c6c2bc1ee5
 # ╠═b8af2286-9780-40a4-82da-4a10e401d4e8
+# ╠═ac0a9ef8-6fbc-42f2-9433-727b235224e5
+# ╠═dac84639-2388-4ee8-9372-aae518a37f17
+# ╠═514c5c27-baa6-44fd-b14a-e96b2860f826
+# ╠═83583ca7-bd96-4589-bbe0-e967849c3bd3
+# ╠═41d90bec-6676-4f75-b6df-2b03d8759089
+# ╠═047bc4a3-fc4d-4ba4-bf70-dc323dc37937
 # ╟─1a488045-380d-4441-a6ec-186d3c53420d
 # ╠═4e509812-7bdf-4928-bee6-55f2d142be67
 # ╠═9260398e-6842-4b11-9845-98900884b94a
