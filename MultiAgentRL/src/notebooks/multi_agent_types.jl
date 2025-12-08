@@ -16,11 +16,14 @@ begin
 end
 
 # ╔═╡ 9f1aa27d-2214-4b7c-9110-1566603887d2
+# ╠═╡ skip_as_script = true
+#=╠═╡
 begin
 	using PlutoUI, PlutoPlotly, PlutoProfile, BenchmarkTools, LaTeXStrings, HypertextLiteral, DataFrames, Dates, CSV, SparseArrays
 	
 	TableOfContents()
 end
+  ╠═╡ =#
 
 # ╔═╡ 73ddfc82-cf10-11f0-a45e-3da27f44d6bc
 md"""
@@ -28,6 +31,7 @@ md"""
 """
 
 # ╔═╡ f6de9a64-7dee-4291-815b-7a891c52a146
+#=╠═╡
 begin
 	abstract type AbstractMultiAgentTransition{T<:Real, N} end
 	abstract type AbstractTabularMultiAgentTransition{T<:Real, N} <: AbstractMultiAgentTransition{T, N} end
@@ -55,11 +59,15 @@ begin
 		(r, i_s′)
 	end
 end
+  ╠═╡ =#
 
 # ╔═╡ 146c7758-657c-4f95-a539-44273e754412
+#=╠═╡
 calc_index(i_s::Integer, a::NTuple{N, I}, ptf::TabularMultiAgentTransition{T, N, Np1, ST, RT}) where {T<:Real, N, I<:Integer, Np1, ST, RT} = LinearIndices(ptf.state_transition_map)[a..., i_s]
+  ╠═╡ =#
 
 # ╔═╡ fe796b4e-fb05-4071-ad4b-7e3ce58092c4
+#=╠═╡
 #convert a multi-agent transition into an MDP transition with the action space begin each joint action and the reward transformed into a single scalar value
 function TabularRL.TabularDeterministicTransition(ptf::TabularMultiAgentDeterministicTransition{T, N, Np1}, reward_function::Function) where {T<:Real, N, Np1}
 	dims = size(ptf.state_transition_map)
@@ -74,11 +82,15 @@ function TabularRL.TabularDeterministicTransition(ptf::TabularMultiAgentDetermin
 	end
 	TabularDeterministicTransition(state_transition_map, reward_transition_map)
 end
+  ╠═╡ =#
 
 # ╔═╡ 75726eb9-eb0e-42a3-a648-dbfce92cbd6e
+#=╠═╡
 abstract type AbstractMultiAgentMDP{T<:Real, S, A, N, P<:AbstractMultiAgentTransition{T, N}, F<:Function} end
+  ╠═╡ =#
 
 # ╔═╡ 79888a7b-c604-4db2-932a-ee9bfd378d9e
+#=╠═╡
 begin
 	struct TabularMultiAgentMDP{T<:Real, S, A, N, P<:AbstractTabularMultiAgentTransition{T, N}, F<:Function} <: AbstractMultiAgentMDP{T, S, A, N, P, F}
 		states::Vector{S}
@@ -98,8 +110,10 @@ begin
 
 	TabularMultiAgentMDP(states::Vector{S}, agent_actions::NTuple{N, Vector{A}}, ptf::P; state_index::Dict{S, Int64} = makelookup(states), action_index::NTuple{N, Dict{A, Int64}} = Tuple(makelookup(a) for a in agent_actions)) where {S, A, N, P<:AbstractTabularMultiAgentTransition} = TabularMultiAgentMDP(states, agent_actions, ptf, Returns(1:length(states)), BitMatrix(undef, length(states)), state_index, action_index)
 end
+  ╠═╡ =#
 
 # ╔═╡ faac6925-b526-4ee0-a84c-b660e6819313
+#=╠═╡
 #convert a tabular multi agent mdp into a tabular mdp using a scalar reward function
 function TabularRL.TabularMDP(mdp::TabularMultiAgentMDP{T, S, A, N, P, F}, reward_function::Function) where {T<:Real, S, A, N, P<:TabularMultiAgentDeterministicTransition, F<:Function}
 	agent_actions = mdp.agent_actions
@@ -112,8 +126,10 @@ function TabularRL.TabularMDP(mdp::TabularMultiAgentMDP{T, S, A, N, P, F}, rewar
 	
 	TabularMDP(mdp.states, joint_action_list, ptf, mdp.initialize_state_index, mdp.terminal_states; state_index = mdp.state_index)
 end
+  ╠═╡ =#
 
 # ╔═╡ 738eadf8-7bbf-4942-a90d-e8accbb52bea
+#=╠═╡
 begin
 	abstract type AbstractStateMultiAgentTransition{T<:Real, S, F<:Function, N} <: AbstractMultiAgentTransition{T, N} end
 
@@ -129,8 +145,10 @@ begin
 
 	(ptf::StateMultiAgentTransitionDeterministic{T, S, F, N})(s::S, a::NTuple{N, I}) where {T<:Real, S, F<:Function, N, I<:Integer} = ptf.step(s, a)
 end
+  ╠═╡ =#
 
 # ╔═╡ 736aacc0-5592-4439-b8c3-cf76525983a5
+#=╠═╡
 begin
 	struct StateMultiAgentMDP{T<:Real, S, A, N, P<:AbstractStateMultiAgentTransition{T, S, F, N} where F<:Function, StateInit<:Function, IsTerm<:Function} <: AbstractMultiAgentMDP{T, S, A, N, P, StateInit}
 		agent_actions::NTuple{N, Vector{A}}
@@ -151,15 +169,19 @@ begin
 	#if terminal check is not provided assume there are no terminal states
 	StateMultiAgentMDP(agent_actions::NTuple{N, A}, ptf::AbstractStateMultiAgentTransition{T, S, F, N}, initialize_state::StateInit; kwargs...) where {T<:Real, S, F<:Function, N, A<:AbstractVector, StateInit<:Function} = StateMultiAgentMDP(agent_actions, ptf, initialize_state, Returns(false); kwargs...)
 end
+  ╠═╡ =#
 
 # ╔═╡ 39182e4e-6ee9-4c14-8b5f-3164e38d5b5a
+#=╠═╡
 begin
 	convert_multiagent_transition(mdp::StateMultiAgentMDP{T, S, A, N, P, F1, F2}, joint_step::Function) where {T<:Real, S, A, N, P<:StateMultiAgentTransitionDeterministic, F1<:Function, F2<:Function} = StateMDPTransitionDeterministic(joint_step, mdp.initialize_state())
 
 	#add other transition types later
 end
+  ╠═╡ =#
 
 # ╔═╡ 0bb34d75-0422-4336-9e62-d6431ce2b1c3
+#=╠═╡
 #convert a multi-agent state mdp into an mdp using a scalar reward function
 function TabularRL.StateMDP(mdp::StateMultiAgentMDP{T, S, A, N, P, F1, F2}, reward_function::Function) where {T<:Real, S, A, N, P<:AbstractStateMultiAgentTransition, F1<:Function, F2<:Function}
 	agent_actions = mdp.agent_actions
@@ -179,6 +201,7 @@ function TabularRL.StateMDP(mdp::StateMultiAgentMDP{T, S, A, N, P, F1, F2}, rewa
 	
 	StateMDP(joint_action_list, ptf, mdp.initialize_state, mdp.isterm)
 end
+  ╠═╡ =#
 
 # ╔═╡ ae85884a-a23a-48f3-947e-19fc4a21d39f
 md"""
@@ -196,6 +219,7 @@ Multiple agents move within a gridworld and have the option to collect items.
 #Need to place items so an agent can never be adjacent to two items at once.  Also need to place agents and items so that none occupy the same grid point.  Perhaps need to have some bitmaps for the position of items and agents.  Need a quick way to lookup which items are collectable in an environment which depends on how many items have the appropriate level agent next to them.  Should make an adjacency map for each item location which contains a list of all adjacent squares.
 
 # ╔═╡ 79b114c9-8999-4e78-86b7-8bc0bd81dcad
+#=╠═╡
 module LevelBasedForaging
 	import RL_Module
 	import TabularRL.makelookup
@@ -503,42 +527,160 @@ module LevelBasedForaging
 		TabularMultiAgentMDP(states, actions, ptf, initialize_state_index, terminal_states; state_index = state_index)
 	end
 end
-
-# ╔═╡ f4daf161-fdfa-4133-9eb5-2870a126e31f
-#need to make a tabular version of this environment for use with Q learning
-
-# ╔═╡ 5733cd23-5572-4719-9521-dd0c9e0fea02
-11*11
-
-# ╔═╡ 8288ada4-e13a-4a2f-97f6-86702da21fa7
-119*118*3
+  ╠═╡ =#
 
 # ╔═╡ 0eec6fce-eefb-48cb-8b1e-0d77bfcb1129
+#=╠═╡
 const lbf_test = LevelBasedForaging.make_environment(;num_agents = 2)
+  ╠═╡ =#
 
 # ╔═╡ e21da4bb-fd0f-4834-90dd-c1c6c2bc1ee5
+#=╠═╡
 makelookup([lbf_test.initialize_state(), lbf_test.initialize_state()]) |> Dict{LevelBasedForaging.ForagingState, Int64}
-
-# ╔═╡ b8af2286-9780-40a4-82da-4a10e401d4e8
-StateMDP(lbf_test, sum)
+  ╠═╡ =#
 
 # ╔═╡ ac0a9ef8-6fbc-42f2-9433-727b235224e5
+#=╠═╡
 const ex_5_3 = LevelBasedForaging.make_5_3_environment()
+  ╠═╡ =#
 
 # ╔═╡ dac84639-2388-4ee8-9372-aae518a37f17
+#=╠═╡
 const tab_5_3 = TabularMDP(ex_5_3, sum)
+  ╠═╡ =#
 
-# ╔═╡ 514c5c27-baa6-44fd-b14a-e96b2860f826
-tab_5_3.initialize_state_index()
+# ╔═╡ 0939a503-0a7a-4f5b-9c3b-5b85f0264062
+#=╠═╡
+tab_5_3.states |> unique
+  ╠═╡ =#
+
+# ╔═╡ 9c7018e8-6765-4bff-b9ea-39d62d47d900
+119*118
 
 # ╔═╡ 83583ca7-bd96-4589-bbe0-e967849c3bd3
-value_iter = value_iteration_v(tab_5_3, 0.99f0)
+#=╠═╡
+const value_iter = value_iteration_v(tab_5_3, 0.99f0)
+  ╠═╡ =#
 
-# ╔═╡ 41d90bec-6676-4f75-b6df-2b03d8759089
-value_iter.final_value[6188]
+# ╔═╡ e5ef0212-ff93-4e2b-a7c1-d7ff53cbb8aa
+#=╠═╡
+const lbf_sarsa = q_learning(tab_5_3, 0.99f0; max_steps = 1_000_000, α = 0.01f0, ϵ = 0.01f0, save_history = true)
+  ╠═╡ =#
+
+# ╔═╡ 348df85c-38c0-414b-a732-e5f134d706f3
+#=╠═╡
+plot(lbf_sarsa.reward_history |> cumsum)
+  ╠═╡ =#
+
+# ╔═╡ e40c695c-ae9e-4718-a835-d1d363996a97
+#=╠═╡
+mean(lbf_sarsa.reward_history[end-10000:end]) |> inv
+  ╠═╡ =#
+
+# ╔═╡ 791a661b-77fd-4ddd-8b82-56c64dcc5c22
+#=╠═╡
+const value_iter_episode = runepisode(tab_5_3; π = value_iter.optimal_policy)
+  ╠═╡ =#
+
+# ╔═╡ a113a20e-a599-4dbb-87a0-f943245d75ce
+#=╠═╡
+@bind timestep Slider(1:length(value_iter_episode[1])+1)
+  ╠═╡ =#
+
+# ╔═╡ 57d02e2c-4387-4345-bed3-504fafcd2a26
+#=╠═╡
+@bind movie_timestep Clock(;max_value = length(value_iter_episode[1])+1, repeat = true, interval = 0.4)
+  ╠═╡ =#
+
+# ╔═╡ 5d736feb-6bb4-401b-a1a3-c9a6f0034caa
+#=╠═╡
+movie_timestep
+  ╠═╡ =#
+
+# ╔═╡ ac51b4e7-3097-420d-a2dc-0d939dea5456
+#=╠═╡
+md"""
+Play Movie: $(@bind timestep_select CheckBox())
+"""
+  ╠═╡ =#
+
+# ╔═╡ 071ba069-84cc-46c7-a03e-39be7d3a67de
+#add trace to show value estimate on bar chart
+#add comparison of q-learning techniques and expected sarsa, etc... for speed of convergence
 
 # ╔═╡ 047bc4a3-fc4d-4ba4-bf70-dc323dc37937
 0.99^13
+
+# ╔═╡ bb33b6ee-93d6-45ec-a904-67af134b60f0
+#next try this with RL Q learning and others or the DP methods.  Add visualization tools and movie playing option.  Then consider the independent learning approach
+
+# ╔═╡ 75a6b525-a507-4cf0-9ba7-ec1e76e86465
+md"""
+# Visualization Tools
+
+"""
+
+# ╔═╡ 9a0a63a1-0292-4937-9d7f-8c18bc3eb28b
+md"""
+## Level-Based Foraging
+"""
+
+# ╔═╡ e1bd2721-a2bf-4b41-978e-470137f0330c
+#=╠═╡
+ex_5_3.states[1]
+  ╠═╡ =#
+
+# ╔═╡ a7acda55-6a77-4b38-91cc-5b19a18c5934
+#=╠═╡
+function plot_foraging_state(s::LevelBasedForaging.ForagingState{N, M}, xmax::Integer, ymax::Integer) where {N, M}
+	bottom_border = scatter(x = [0, xmax+1], y = [0, 0], mode = "lines", line_color = "black", showlegend = false, name = "Edge", line_width = 3)
+	top_border = scatter(x = [0, xmax+1], y = [ymax+1, ymax+1], mode = "lines", line_color = "black", showlegend = false, name = "Edge", line_width = 3)
+	left_border = scatter(x = [0, 0], y = [0, ymax+1], mode = "lines", line_color = "black", showlegend = false, name = "Edge", line_width = 3)
+	right_border = scatter(x = [xmax+1, xmax+1], y = [0, ymax+1], mode = "lines", line_color = "black", showlegend = false, name = "Edge", line_width = 3)
+	agent_xs = [s.agent_positions[i][1] for i in 1:N]
+	agent_ys = [s.agent_positions[i][2] for i in 1:N]
+	agent_trace = scatter(x = agent_xs, y = agent_ys, name = "Agents", mode = "markers")
+
+	item_xs = [s.item_positions[i][1] for i in 1:M]
+	item_ys = [s.item_positions[i][2] for i in 1:M]
+	item_trace = scatter(x = item_xs, y = item_ys, name = "Items", mode = "markers")
+
+	plot([agent_trace, item_trace, bottom_border, top_border, left_border, right_border], Layout(xaxis_title = "x", yaxis_title = "y", xaxis_range = [0, xmax+1], yaxis_range = [0, ymax+1], yaxis_scaleanchor="x", width = 450, xaxis_dtick = 1, yaxis_dtick = 1, xaxis_tickvals = 1:xmax, xaxis_ticktext = string.(1:xmax), yaxis_tickvals = 1:ymax, yaxis_ticktext = string.(1:ymax), annotations = vcat([attr(x = s.agent_positions[i][1], y = s.agent_positions[i][2], text = s.agent_levels[i], showarrow = true,  font = attr(color = "blue", size = 14, weight = 1000, showdow = "auto")) for i in 1:N], [attr(x = s.item_positions[i][1], y = s.item_positions[i][2], text = s.item_levels[i], showarrow = true,  font = attr(color = "orange", size = 14, weight = 1000, showdow = "auto")) for i in 1:M])))
+end
+  ╠═╡ =#
+
+# ╔═╡ 1f7c4a86-d530-4d17-9640-6c1c7315f1bc
+#=╠═╡
+function plot_lbf_episode(timestep)
+	@htl("""
+		 <div style = "display: flex; height: 420px;">
+		 <div>
+		 State Value Function: $(round(value_iter.final_value[vcat(value_iter_episode[1], value_iter_episode[4])[timestep]]; sigdigits = 3))
+		 $(plot_foraging_state(tab_5_3.states[vcat(value_iter_episode[1], value_iter_episode[4])[timestep]], 11, 11))
+		 </div>
+		 <div>
+		 <div style = "width: 600px;">
+		 Agent Rewards per Time Step
+		 $(plot([scatter(x = [timestep], y = 0, mode = "markers", color = "red", name = "Current Timestep"), bar(y = [0; 0; value_iter_episode[3]], name = "Agent Reward Sum")], Layout(yaxis_title = "Reward", xaxis_title = "Episode Step", xaxis_range = [0, length(value_iter_episode[1])+2])))
+		 </div>
+		 </div>
+		 """)
+end
+  ╠═╡ =#
+
+# ╔═╡ fdcfd9d8-5c2e-4e6f-a408-7c530b1bc5ff
+#=╠═╡
+if timestep_select
+	plot_lbf_episode(movie_timestep)
+else
+	plot_lbf_episode(timestep)
+end
+  ╠═╡ =#
+
+# ╔═╡ 924d646f-8fd7-4b0b-a5c5-0446abb6434e
+#=╠═╡
+plot_foraging_state(ex_5_3.states[6188], 11, 11)
+  ╠═╡ =#
 
 # ╔═╡ 1a488045-380d-4441-a6ec-186d3c53420d
 md"""
@@ -1255,18 +1397,31 @@ version = "17.7.0+0"
 # ╟─660d62d3-b967-41ba-8dab-8d1003dcd1fc
 # ╠═43b87608-0e2e-4326-8592-fb2a28b8cc15
 # ╠═79b114c9-8999-4e78-86b7-8bc0bd81dcad
-# ╠═f4daf161-fdfa-4133-9eb5-2870a126e31f
-# ╠═5733cd23-5572-4719-9521-dd0c9e0fea02
-# ╠═8288ada4-e13a-4a2f-97f6-86702da21fa7
 # ╠═0eec6fce-eefb-48cb-8b1e-0d77bfcb1129
 # ╠═e21da4bb-fd0f-4834-90dd-c1c6c2bc1ee5
-# ╠═b8af2286-9780-40a4-82da-4a10e401d4e8
 # ╠═ac0a9ef8-6fbc-42f2-9433-727b235224e5
 # ╠═dac84639-2388-4ee8-9372-aae518a37f17
-# ╠═514c5c27-baa6-44fd-b14a-e96b2860f826
+# ╠═0939a503-0a7a-4f5b-9c3b-5b85f0264062
+# ╠═9c7018e8-6765-4bff-b9ea-39d62d47d900
 # ╠═83583ca7-bd96-4589-bbe0-e967849c3bd3
-# ╠═41d90bec-6676-4f75-b6df-2b03d8759089
+# ╠═e5ef0212-ff93-4e2b-a7c1-d7ff53cbb8aa
+# ╠═348df85c-38c0-414b-a732-e5f134d706f3
+# ╠═e40c695c-ae9e-4718-a835-d1d363996a97
+# ╠═791a661b-77fd-4ddd-8b82-56c64dcc5c22
+# ╠═5d736feb-6bb4-401b-a1a3-c9a6f0034caa
+# ╟─a113a20e-a599-4dbb-87a0-f943245d75ce
+# ╟─57d02e2c-4387-4345-bed3-504fafcd2a26
+# ╟─ac51b4e7-3097-420d-a2dc-0d939dea5456
+# ╠═fdcfd9d8-5c2e-4e6f-a408-7c530b1bc5ff
+# ╠═071ba069-84cc-46c7-a03e-39be7d3a67de
+# ╠═1f7c4a86-d530-4d17-9640-6c1c7315f1bc
 # ╠═047bc4a3-fc4d-4ba4-bf70-dc323dc37937
+# ╠═bb33b6ee-93d6-45ec-a904-67af134b60f0
+# ╟─75a6b525-a507-4cf0-9ba7-ec1e76e86465
+# ╟─9a0a63a1-0292-4937-9d7f-8c18bc3eb28b
+# ╠═924d646f-8fd7-4b0b-a5c5-0446abb6434e
+# ╠═e1bd2721-a2bf-4b41-978e-470137f0330c
+# ╠═a7acda55-6a77-4b38-91cc-5b19a18c5934
 # ╟─1a488045-380d-4441-a6ec-186d3c53420d
 # ╠═4e509812-7bdf-4928-bee6-55f2d142be67
 # ╠═9260398e-6842-4b11-9845-98900884b94a
