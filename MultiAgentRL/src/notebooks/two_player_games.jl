@@ -373,7 +373,7 @@ md"""
 Comparing this formulation to (4.12 - 4.15) makes it clear that the minimax solution is not in the traditional form of linear programming.  Note that there is not even an equation for the objective function.  In order to apply linear programming, we must perform a change of variables on the above equations.
 
 
-Consider the following new set of variables: ``v_{a_i} = \frac{x_{a_i}}{U_j ^*}``.  Also note that ``x_{a_i} \geq 0 \: \forall a_i \in A_i`` so what does it mean in this case to minimize ``U_j^*``?  Well let's consider the sum of our new variables: ``\sum_{a_i \in A_i} v_{a_i} = \frac{\sum_{a_i \in A_i} x_{a_i}}{U_j*}` = \frac{1}{U_j^*}``.  Let's say we know ahead of time that ``U_j^* \geq 0``.  Then minimizing it would be equivalent to maximizing the sum of the new variables.  Similarly, if ``U_j^* \leq 0``, then minimizing it would be equivalent to maximizing he sum of the new variables.  So we have an objective function which is just the sum of all the new variables weighted by 1.
+Consider the following new set of variables: ``v_{a_i} = \frac{x_{a_i}}{U_j ^*}``.  Also note that ``x_{a_i} \geq 0 \: \forall a_i \in A_i`` so what does it mean in this case to minimize ``U_j^*``?  Well let's consider the sum of our new variables: ``\sum_{a_i \in A_i} v_{a_i} = \frac{\sum_{a_i \in A_i} x_{a_i}}{U_j*} = \frac{1}{U_j^*}``.  Let's say we know ahead of time that ``U_j^* \geq 0``.  Then minimizing it would be equivalent to maximizing the sum of the new variables.  Similarly, if ``U_j^* \leq 0``, then minimizing it would be equivalent to maximizing he sum of the new variables.  So we have an objective function which is just the sum of all the new variables weighted by 1.
 
 ```math
 \begin{alignat*}{3}
@@ -1682,20 +1682,20 @@ import HiGHS
 # ╔═╡ 8fc47d0c-bc4c-460e-a9d3-8c33fe797024
 begin
 	model = Model(HiGHS.Optimizer)
-	minreward = minimum(rewardmatrix4)
+	minreward = -maximum(rewardmatrix4)
 	@variable(model, x[1:2])
 	@constraint(model, x .>= 0)
-	@constraint(model, x[1]*(rewardmatrix4.AA - minreward) + x[2]*(rewardmatrix4.BA - minreward) ≤ 1)
-	@constraint(model, x[1]*(rewardmatrix4.AB - minreward) + x[2]*(rewardmatrix4.BB - minreward) ≤ 1)
+	@constraint(model, x[1]*(-rewardmatrix4.AA - minreward) + x[2]*(-rewardmatrix4.BA - minreward) ≤ 1)
+	@constraint(model, x[1]*(-rewardmatrix4.AB - minreward) + x[2]*(-rewardmatrix4.BB - minreward) ≤ 1)
 	@objective(model, Max, sum(x))
 	optimize!(model)
 	modified_game_value = inv(sum(value.(x)))
-	x_policy = value.(x) .* modified_game_value
-	game_value = modified_game_value + minreward
+	x_policy1 = value.(x) .* modified_game_value
+	game_value1 = -(modified_game_value + minreward)
 end
 
 # ╔═╡ a6fac14d-ab9b-49e2-b92a-6a204ae96477
-(game_value = game_value, x_policy = x_policy)
+(game_value1 = game_value1, x_policy1 = x_policy1)
 
 # ╔═╡ b846df09-09d1-4947-b03e-8e64b8a159f1
 print(model)
@@ -1705,6 +1705,24 @@ assert_is_solved_and_feasible(model)
 
 # ╔═╡ bf19b54a-59af-4291-b2c5-d77dba40e03a
 solution_summary(model)
+
+# ╔═╡ 9c8099eb-a263-4487-863b-e34e1ba3bb99
+begin
+	model2 = Model(HiGHS.Optimizer)
+	minreward2 = minimum(rewardmatrix4)
+	@variable(model2, x2[1:2])
+	@constraint(model2, x2 .>= 0)
+	@constraint(model2, x2[1]*(rewardmatrix4.AA - minreward2) + x2[2]*(rewardmatrix4.AB - minreward2) ≤ 1)
+	@constraint(model2, x2[1]*(rewardmatrix4.BA - minreward2) + x2[2]*(rewardmatrix4.BB - minreward2) ≤ 1)
+	@objective(model2, Max, sum(x2))
+	optimize!(model2)
+	modified_game_value2 = inv(sum(value.(x2)))
+	x_policy2 = value.(x2) .* modified_game_value2
+	game_value2 = modified_game_value + minreward2
+end
+
+# ╔═╡ 8173f230-088e-4e5a-8bfc-a68f0e416da4
+(game_value2 = game_value2, x_policy2 = x_policy2)
 
 # ╔═╡ b4396fe9-c88b-4d17-b096-139c610f7a9d
 function solve_minimax_game(reward_matrix::Matrix)
@@ -2530,12 +2548,14 @@ version = "17.7.0+0"
 # ╠═c6f0f327-2ddf-497b-996d-cc8f296c8fde
 # ╟─5f455edf-7cb8-4199-9f71-c31fd1b793f2
 # ╟─d0571165-6b22-43b6-a023-f14fb5575c68
-# ╟─500ddfe9-4f4c-4411-8ca2-ce60f058a125
+# ╠═500ddfe9-4f4c-4411-8ca2-ce60f058a125
 # ╟─8b7fc1fe-2bf3-440d-993c-6560b1f53ec1
 # ╟─f2aecc45-5773-4ef5-bf61-99a868ac3548
 # ╠═429e4864-16c7-415a-b7eb-8fb09d36ab18
 # ╠═a6fac14d-ab9b-49e2-b92a-6a204ae96477
 # ╠═8fc47d0c-bc4c-460e-a9d3-8c33fe797024
+# ╠═8173f230-088e-4e5a-8bfc-a68f0e416da4
+# ╠═9c8099eb-a263-4487-863b-e34e1ba3bb99
 # ╠═b846df09-09d1-4947-b03e-8e64b8a159f1
 # ╠═06980c18-c294-4c8d-9783-0b75beedf13b
 # ╠═bf19b54a-59af-4291-b2c5-d77dba40e03a

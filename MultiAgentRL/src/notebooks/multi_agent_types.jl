@@ -81,12 +81,41 @@ function TabularRL.TabularDeterministicTransition(ptf::TabularGameDeterministicT
 	TabularDeterministicTransition(state_transition_map, reward_transition_map)
 end
 
-# ╔═╡ 85251e1c-6704-4dc5-85dd-0c8d9706358e
-#note that for a zero-sum and common-reward game only one reward value is needed for all of the agent rewards
+# ╔═╡ 28920a55-4e8c-4dfc-84a0-03eeb13b9975
+begin
+	struct TabularGameTransitionSampler{T<:Real, N, F<:Function} <: AbstractTabularGameTransition{T, N}
+		step::F
+		function TabularGameTransitionSampler(step::F, a::NTuple{N, I}) where {F<:Function, N, I<:Integer}
+			(rewards, i_s′) = step(1, a)
+			@assert isa(i_s′, Integer)
+			@assert length(rewards) == N
+			new{eltype(rewards), N, F}(step)
+		end
+	end
+
+	#when used as a functor just apply the step function to the state action pair indices
+	(ptf::TabularGameTransitionSampler{T, N, F})(i_s::Integer, a::NTuple{N, I}) where {T<:Real, F<:Function, N, I<:Integer} = ptf.step(i_s, a)
+end
+
+# ╔═╡ 11b17cb5-30fa-4a66-bf71-52b4dc9f2f02
+sample_joint_action(πs::NTuple{N, M}, i_s::Integer) where {N, T<:Real, M <:AbstractMatrix{T}} = Tuple(sample_action(πs[n], i_s) for n in 1:N)
+
+# ╔═╡ dd64a78d-a8f1-4b9b-aa8b-95ee48936268
+function (ptf::AbstractGameTransition{T, N})(s, πs::NTuple{N, A}) where {T<:Real, A<:AbstractMatrix{T}, N}
+	a = sample_joint_action(πs, s)
+	(r, s′) = ptf(s, a)
+	return (r, s′, a)
+end
+
+# ╔═╡ 0b20d83b-eef0-4006-891e-9d15282ea57b
+begin
+	abstract type AbstractTabularCommonRewardGameTransition{T<:Real, N} <: AbstractTabularGameTransition{T, N} end 
+	abstract type AbstractTabularZeroSumGameTransition{T<:Real} <: AbstractTabularGameTransition{T, 2} end 
+end
 
 # ╔═╡ c42b7d58-922d-4b17-a03c-62433c9adeb9
 begin
-	struct TabularZeroSumGameTransition{T<:Real, ST<:Union{Int64, SparseVector{T, Int64}}, RT<:Union{T, Vector{T}}} <: AbstractTabularGameTransition{T, 2}
+	struct TabularZeroSumGameTransition{T<:Real, ST<:Union{Int64, SparseVector{T, Int64}}, RT<:Union{T, Vector{T}}} <: AbstractTabularZeroSumGameTransition{T}
 		state_transition_map::Array{ST, 3}
 		reward_transition_map::Array{RT, 3}
 		function TabularZeroSumGameTransition(state_transition_map::Array{ST, 3}, reward_transition_map::Array{RT, 3}) where {T<:Real, ST<:Union{Int64, SparseVector{T, Int64}}, RT <: Union{T, Vector{T}}}
@@ -102,11 +131,34 @@ begin
 		r = ptf.reward_transition_map[a[1], a[2], i_s]
 		(r, i_s′)
 	end
+
+	function (ptf::TabularZeroSumGameStochasticTransition{T})(i_s::Integer, a::NTuple{2, I}) where {T<:Real, I<:Integer}
+		state_transition_probabilities = ptf.state_transition_map[a[1], a[2], i_s]
+		i = sample_action(state_transition_probabilities.nzval)
+		i_s′ = state_transition_probabilities.nzind[i]
+		r = ptf.reward_transition_map[a[1], a[2], i_s][i]
+		(r, i_s′)
+	end
+end
+
+# ╔═╡ 71d96c8a-d036-45a9-95e4-bbf4ee079607
+begin
+	struct TabularZeroSumGameTransitionSampler{T<:Real, F<:Function} <: AbstractTabularZeroSumGameTransition{T}
+		step::F
+		function TabularZeroSumGameTransitionSampler(step::F) where {F<:Function}
+			(r, i_s′) = step(1, (1, 1))
+			@assert isa(i_s′, Integer)
+			new{typeof(r), F}(step)
+		end
+	end
+
+	#when used as a functor just apply the step function to the state action pair indices
+	(ptf::TabularZeroSumGameTransitionSampler{T, F})(i_s::Integer, a::NTuple{2, I}) where {T<:Real, F<:Function, I<:Integer} = ptf.step(i_s, a)
 end
 
 # ╔═╡ 6f98c460-6d48-457d-a40c-6b8588fb01ef
 begin
-	struct TabularCommonRewardGameTransition{T<:Real, N, Np1, ST<:Union{Int64, SparseVector{T, Int64}}, RT<:Union{T, Vector{T}}} <: AbstractTabularGameTransition{T, N}
+	struct TabularCommonRewardGameTransition{T<:Real, N, Np1, ST<:Union{Int64, SparseVector{T, Int64}}, RT<:Union{T, Vector{T}}} <: AbstractTabularCommonRewardGameTransition{T, N}
 		state_transition_map::Array{ST, Np1}
 		reward_transition_map::Array{RT, Np1}
 		function TabularCommonRewardGameTransition(state_transition_map::Array{ST, Np1}, reward_transition_map::Array{RT, Np1}) where {T<:Real, Np1, ST<:Union{Int64, SparseVector{T, Int64}}, RT <: Union{T, Vector{T}}}
@@ -122,6 +174,21 @@ begin
 		r = ptf.reward_transition_map[a..., i_s]
 		(r, i_s′)
 	end
+end
+
+# ╔═╡ c9b36b87-4a88-4398-95ce-4feb4f9839f7
+begin
+	struct TabularCommonRewardGameTransitionSampler{T<:Real, N, F<:Function} <: AbstractTabularCommonRewardGameTransition{T, N}
+		step::F
+		function TabularCommonRewardGameTransitionSampler(step::F, a::NTuple{N, I}) where {F<:Function, I<:Integer, N}
+			(r, i_s′) = step(1, a)
+			@assert isa(i_s′, Integer)
+			new{typeof(r), N, F}(step)
+		end
+	end
+
+	#when used as a functor just apply the step function to the state action pair indices
+	(ptf::TabularCommonRewardGameTransitionSampler{T, N, F})(i_s::Integer, a::NTuple{N, I}) where {T<:Real, F<:Function, I<:Integer, N} = ptf.step(i_s, a)
 end
 
 # ╔═╡ ed41ec94-38be-40de-bf61-c927c242cef7
@@ -187,6 +254,82 @@ function TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, N,
 	ptf = TabularDeterministicTransition(stochastic_game.ptf, reward_function)
 	
 	TabularMDP(stochastic_game.states, joint_action_list, ptf, stochastic_game.initialize_state_index, stochastic_game.terminal_states; state_index = stochastic_game.state_index)
+end
+
+# ╔═╡ d2bfbf48-2ca0-483f-afab-9a292343beca
+#convert a tabular stochastic game into a tabular mdp using a scalar reward function
+function TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, N, P, F}, reward_function::Function) where {T<:Real, S, A, N, P<:TabularGameTransitionSampler, F<:Function}
+	agent_actions = stochastic_game.agent_actions
+	num_actions = Tuple(length(a) for a in agent_actions)
+	joint_action_matrix = Array{A, N}(undef, num_actions...)
+	inds = CartesianIndices(joint_action_matrix)
+	joint_action_list = [Tuple(agent_actions[i][inds[n][i]] for i in 1:N) for n in 1:length(joint_action_matrix)]
+
+	function step(i_s::Integer, i_a::Integer)
+		a = joint_action_list[i_a]
+		(rewards, i_s′) = stochastic_game.ptf.step(i_s, a)
+		r = reward_function(rewards)
+		return (r, i_s′)
+	end
+	
+	ptf = TabularMDPTransitionSampler(step)
+	
+	TabularMDP(stochastic_game.states, joint_action_list, ptf, stochastic_game.initialize_state_index, stochastic_game.terminal_states; state_index = stochastic_game.state_index)
+end
+
+# ╔═╡ e838d71d-4120-4e4c-8727-82caf6a1431c
+function TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, N, P, F}) where {T<:Real, S, A, N, P<:TabularCommonRewardGameTransitionSampler, F<:Function}
+	agent_actions = stochastic_game.agent_actions
+	num_actions = Tuple(length(a) for a in agent_actions)
+	joint_action_matrix = Array{A, N}(undef, num_actions...)
+	inds = CartesianIndices(joint_action_matrix)
+	joint_action_list = [Tuple(agent_actions[i][inds[n][i]] for i in 1:N) for n in 1:length(joint_action_matrix)]
+
+	function step(i_s::Integer, i_a::Integer)
+		a = joint_action_list[i_a]
+		stochastic_game.ptf.step(i_s, a)
+	end
+	
+	ptf = TabularMDPTransitionSampler(step)
+	
+	TabularMDP(stochastic_game.states, joint_action_list, ptf, stochastic_game.initialize_state_index, stochastic_game.terminal_states; state_index = stochastic_game.state_index)
+end
+
+# ╔═╡ 53c087e9-ad7d-4a83-a373-0e0d3e406724
+#convert a tabular stochastic game into a tabular mdp for agent i using fixed policies for the other agents
+function TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, N, P, F}, agent_index::Integer, πs_other::NTuple{Nm1, M}) where {T<:Real, S, A, N, Nm1, P<:TabularGameTransitionSampler{T, N}, F<:Function, T2<:Real, M <: AbstractMatrix{T2}}
+	@assert Nm1 == (N - 1) "There must be $(N-1) policies for the other agents"
+	agent_actions = stochastic_game.agent_actions
+	function step(i_s::Integer, i_a::Integer)
+		a_other = sample_joint_action(πs_other, i_s)
+		a = (Tuple(a_other[i] for i in 1:agent_index-1)..., i_a, Tuple(a_other[i] for i in agent_index+1:N))
+		(rewards, i_s′) = stochastic_game.ptf.step(i_s, a)
+		r = rewards[agent_index]
+		return (r, i_s′)
+	end
+
+	ptf = TabularMDPTransitionSampler(step)
+	
+	TabularMDP(stochastic_game.states, agent_actions[agent_index], ptf, stochastic_game.initialize_state_index, stochastic_game.terminal_states; state_index = stochastic_game.state_index)
+end
+
+# ╔═╡ 3f9d927e-4158-4531-b31f-56aae3ac0c7b
+#convert a tabular stochastic game into a tabular mdp for agent i using fixed policies for the other agents
+function TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, 2, P, F}, player1::Bool, π_other::M) where {T<:Real, S, A, P<:TabularZeroSumGameTransitionSampler{T}, F<:Function, T2<:Real, M <: AbstractMatrix{T2}}
+	agent_actions = stochastic_game.agent_actions
+	inds = player1 ? (1, 2) : (2, 1)
+	form_joint_action(a::Tuple{Int64, Int64}) = (a[inds[1]], a[inds[2]])  
+	c = player1 ? one(T) : -1*one(T)
+	function step(i_s::Integer, i_a::Integer)
+		i_a_other = sample_action(π_other, i_s)
+		a = form_joint_action((i_a, i_a_other))
+		(r, i_s′) = stochastic_game.ptf.step(i_s, a)
+		return (c*r, i_s′)
+	end
+
+	ptf = TabularMDPTransitionSampler(step)
+	
+	TabularMDP(stochastic_game.states, agent_actions[agent_index], ptf, stochastic_game.initialize_state_index, stochastic_game.terminal_states; state_index = stochastic_game.state_index)
 end
 
 # ╔═╡ 776a9ef9-8477-449f-b195-2cc5d7c93749
@@ -425,7 +568,7 @@ module LevelBasedForaging
 		for i in 2:num_items
 			p = rand(allowed_positions)
 			push!(item_positions, p)
-			setdiff!(allowed_positions, p)
+			setdiff!(allowed_positions, (p,))
 			for m in (Up(), Down(), Right(), Left())
 				setdiff!(allowed_positions, move(p, m))
 			end
@@ -433,7 +576,7 @@ module LevelBasedForaging
 
 		agent_positions = [rand(allowed_positions)]
 		for i in 2:num_agents
-			setdiff!(allowed_positions, agent_positions[i-1])
+			setdiff!(allowed_positions, agent_positions[[i-1]])
 			push!(agent_positions, rand(allowed_positions))
 		end
 
@@ -553,7 +696,7 @@ module LevelBasedForaging
 		s0 = initialize_state()
 		states = Vector{ForagingState}()
 		for p1 in s0.available_positions
-			for p2 in setdiff(s0.available_positions, p1)
+			for p2 in setdiff(s0.available_positions, (p1,))
 				push!(states, ForagingState([p1, p2], s0.item_positions, s0.agent_levels, s0.item_levels, s0.available_positions, s0.item_collection_positions, 3))
 			end
 		end
@@ -561,7 +704,7 @@ module LevelBasedForaging
 		#only keep item 1 and iterate through all agent positions
 		s1 = ForagingState(s0.agent_positions, s0.item_positions[[1]], s0.agent_levels, s0.item_levels[[1]], 3, 11, 11)
 		for p1 in s1.available_positions
-			for p2 in setdiff(s1.available_positions, p1)
+			for p2 in setdiff(s1.available_positions, (p1,))
 				push!(states, ForagingState([p1, p2], s1.item_positions, s1.agent_levels, s1.item_levels, s1.available_positions, s1.item_collection_positions, 3))
 			end
 		end
@@ -569,7 +712,7 @@ module LevelBasedForaging
 		#only keep item 2 and iterate through all agent positions
 		s2 = ForagingState(s0.agent_positions, s0.item_positions[[2]], s0.agent_levels, s0.item_levels[[2]], 3, 11, 11)
 		for p1 in s2.available_positions
-			for p2 in setdiff(s2.available_positions, p1)
+			for p2 in setdiff(s2.available_positions, (p1,))
 				push!(states, ForagingState([p1, p2], s2.item_positions, s2.agent_levels, s2.item_levels, s2.available_positions, s2.item_collection_positions, 3))
 			end
 		end
@@ -577,7 +720,7 @@ module LevelBasedForaging
 		#remove both items and iterate through all agent positions
 		s3 = ForagingState(s0.agent_positions, Vector{Position}(), s0.agent_levels, Vector{Int64}(), 3, 11, 11)
 		for p1 in s3.available_positions
-			for p2 in setdiff(s3.available_positions, p1)
+			for p2 in setdiff(s3.available_positions, (p1,))
 				push!(states, ForagingState([p1, p2], s3.item_positions, s3.agent_levels, s3.item_levels, s3.available_positions, s3.item_collection_positions, 3))
 			end
 		end
@@ -620,10 +763,15 @@ module LevelBasedForaging
 end
 
 # ╔═╡ 0eec6fce-eefb-48cb-8b1e-0d77bfcb1129
+# ╠═╡ skip_as_script = true
+#=╠═╡
 const lbf_test = LevelBasedForaging.make_environment(;num_agents = 3)
+  ╠═╡ =#
 
 # ╔═╡ b149a025-3b7b-4ee5-a4a5-a6bcd035ad8b
+#=╠═╡
 const lbf_single_agent_reduction = StateMDP(lbf_test, sum)
+  ╠═╡ =#
 
 # ╔═╡ c1cc33d2-ad34-4ad8-b47a-6be3aa44c8ed
 md"""
@@ -631,7 +779,10 @@ md"""
 """
 
 # ╔═╡ ac0a9ef8-6fbc-42f2-9433-727b235224e5
+# ╠═╡ skip_as_script = true
+#=╠═╡
 const ex_5_3 = LevelBasedForaging.make_5_3_environment()
+  ╠═╡ =#
 
 # ╔═╡ 63062544-0375-4de4-86e3-385347033e5d
 md"""
@@ -644,7 +795,9 @@ Using the sum of agent rewards as the scalar transformation, we can convert this
 """
 
 # ╔═╡ dac84639-2388-4ee8-9372-aae518a37f17
+#=╠═╡
 const tab_5_3 = TabularMDP(ex_5_3, sum)
+  ╠═╡ =#
 
 # ╔═╡ c46aa7de-2b71-4abe-b420-17802f027ab4
 md"""
@@ -654,7 +807,9 @@ With a tabular MDP, we can apply an exactly solution technique such as value ite
 """
 
 # ╔═╡ 83583ca7-bd96-4589-bbe0-e967849c3bd3
+#=╠═╡
 const value_iter = value_iteration_v(tab_5_3, 0.99f0)
+  ╠═╡ =#
 
 # ╔═╡ aa1faa8e-1e85-4ce1-91c2-adacac30e80c
 md"""
@@ -681,27 +836,39 @@ We can also apply estimation techniques from reinforcement learning that rely on
 """
 
 # ╔═╡ e5ef0212-ff93-4e2b-a7c1-d7ff53cbb8aa
+#=╠═╡
 const lbf_sarsa = q_learning(tab_5_3, 0.99f0; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
+  ╠═╡ =#
 
 # ╔═╡ b6df5773-94cd-488b-bb14-4713314a4575
+#=╠═╡
 function get_lbf_sarsa_statistics(algo; nruns = Base.Threads.nthreads(), kwargs...)
 	1:nruns |> Map() do i
 		output = algo(tab_5_3, 0.99f0; kwargs..., save_history = true)
 		output.reward_history
 	end |> foldxt((a, b) -> a .+ b) |> v -> v ./ nruns
 end
+  ╠═╡ =#
 
 # ╔═╡ 1d609b68-52a1-4459-a605-cae08785f306
+#=╠═╡
 const lbf_sarsa_avg = get_lbf_sarsa_statistics(sarsa; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
+  ╠═╡ =#
 
 # ╔═╡ 7201de00-04d0-4eea-b814-08fe26fbabb5
+#=╠═╡
 const lbf_expected_sarsa_avg = get_lbf_sarsa_statistics(expected_sarsa; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.1f0, save_history = true)
+  ╠═╡ =#
 
 # ╔═╡ 2d15d9d3-4fec-498f-a1c0-9ae3c10f2d2f
+#=╠═╡
 const lbf_q_learning_avg = get_lbf_sarsa_statistics(q_learning; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
+  ╠═╡ =#
 
 # ╔═╡ 09474fdf-df26-4e33-8f29-fc6ad9b85368
+#=╠═╡
 const lbf_double_q_learning_avg = get_lbf_sarsa_statistics(double_q_learning; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
+  ╠═╡ =#
 
 # ╔═╡ 5a291aa8-5aeb-4427-aff2-c30a154c435d
 #=╠═╡
@@ -727,7 +894,9 @@ end
   ╠═╡ =#
 
 # ╔═╡ 791a661b-77fd-4ddd-8b82-56c64dcc5c22
+#=╠═╡
 const value_iter_episode = runepisode(tab_5_3; π = value_iter.optimal_policy)
+  ╠═╡ =#
 
 # ╔═╡ a113a20e-a599-4dbb-87a0-f943245d75ce
 #=╠═╡
@@ -737,6 +906,253 @@ const value_iter_episode = runepisode(tab_5_3; π = value_iter.optimal_policy)
 # ╔═╡ 57d02e2c-4387-4345-bed3-504fafcd2a26
 #=╠═╡
 @bind movie_timestep Clock(;max_value = length(value_iter_episode[1])+1, repeat = true, interval = 0.4)
+  ╠═╡ =#
+
+# ╔═╡ 775fd220-532d-49ba-968f-20781c5d6708
+md"""
+## Two-Player Soccer
+
+Each episode starts with the ball randomly assigned to one agent and the two agents on their respective side of the "field" offset vertically by one square.  Each agent can move in the four cardinal grid directions or stand still.  If the agent with the ball ateempts to move into the location of the other agent, it loses the ball to the other agent.  An agent scores a reward of +1 if it moves the ball into the opponent goal (and the opponent gets a reward of -1), after which a new episode starts.  Selected actions are executed in a random order.
+"""
+
+# ╔═╡ 604461b5-484e-468d-ada7-8f70d3b222c8
+module TwoPlayerSoccer
+	#import general RL and MARL types and functions
+	import RL_Module
+	import TabularRL.makelookup
+
+	import ..TabularZeroSumGameTransitionSampler
+	import ..TabularZeroSumGameStochasticTransition
+	import ..TabularZeroSumGameTransition
+	import ..TabularGameTransition
+	import ..TabularStochasticGame
+	import ..SparseVector
+	
+
+	abstract type Move end
+	struct Up <: Move end
+	struct Down <: Move end
+	struct Left <: Move end
+	struct Right <: Move end
+	struct Noop <: Move end
+
+	#position x/y coordinate in gridworld
+	const Position = Tuple{Int64, Int64}
+
+	const action_list = [Up(), Down(), Left(), Right(), Noop()]
+	const action_index = makelookup(action_list)
+
+	struct State{Width, Height, GoalHeight}
+		agent_positions::Tuple{Position, Position}
+		agent1_ball::Bool
+	end
+
+
+	function State(agent_positions::Tuple{Position, Position}, agent1_ball::Bool, width::Integer, height::Integer)
+		@assert isodd(width)
+		@assert iseven(height)
+		goal_y = Int64(height/2)
+		State{width, height, goal_y}(agent_positions, agent1_ball)
+	end
+
+	#LBF episodes end after all items have been collected
+	function isterm(s::State{W, H, GH}) where {W, H, GH} 
+		s.agent1_ball && return (s.agent_positions[1][1] == 0)
+		!s.agent1_ball && return (s.agent_positions[2][1] == W+1)
+	end
+
+	#rules to update an agent's position in the grid
+	move(p::Position, ::Noop) = p
+	move(p::Position, ::Up) = (p[1], p[2]+1)
+	move(p::Position, ::Right) = (p[1]+1, p[2])
+	move(p::Position, ::Down) = (p[1], p[2]-1)
+	move(p::Position, ::Left) = (p[1]-1, p[2])
+
+	move(p::Position, i_a::Integer) = move(p, action_list[i_a])
+
+	
+	function step(s::State{W, H, GH}, a::Tuple{Move, Move}, agent1_first::Bool) where {W, H, GH}
+		isterm(s) && return (0f0, s)
+		(i1, i2, i1ball, i1score_x, i2score_x) = if agent1_first
+			(1, 2, s.agent1_ball, 0, W+1)
+		else
+			(2, 1, !s.agent1_ball, W+1, 0)
+		end
+
+		switch_ball = false
+		p1′ = move(s.agent_positions[i1], a[i1])
+		move_into1 = (clamp(p1′[1], 1, W) == s.agent_positions[i2][1]) && (clamp(p1′[2], 1, H) == s.agent_positions[i2][2])
+		if move_into1
+			p1′ = s.agent_positions[i1]
+		end
+
+		p2′ = move(s.agent_positions[i2], a[i2])
+		move_into2 = (clamp(p2′[1], 1, W) == clamp(p1′[1], 1, W)) && (clamp(p2′[2], 1, H) == clamp(p1′[2], 1, H))
+		
+		switch_ball = (move_into1 && i1ball) || (move_into2 && !i1ball)
+
+		if move_into2
+			p2′ = s.agent_positions[i2]
+		end
+
+		i1ball′ = if switch_ball
+			!i1ball
+		else
+			i1ball
+		end
+
+		i1score = (i1ball′ && ((p1′[2] == GH) || (p1′[2] == GH+1)) && (p1′[1] == i1score_x))
+		i2score = (!i1ball′ && ((p2′[2] == GH) || (p2′[2] == GH+1)) && (p2′[1] == i2score_x))
+
+		p1′ = (i1score ? i1score_x : clamp(p1′[1], 1, W), clamp(p1′[2], 1, H))
+		p2′ = (i2score ? i2score_x : clamp(p2′[1], 1, W), clamp(p2′[2], 1, H))
+
+		agent1_ball′ = if switch_ball
+			!s.agent1_ball
+		else
+			s.agent1_ball
+		end
+		
+		if (i1 == 1)
+			r = Float32(i1score - i2score)
+			s′ = State{W, H, GH}((p1′, p2′), agent1_ball′)
+		else
+			r = Float32(i2score - i1score)
+			s′ = State{W, H, GH}((p2′, p1′), agent1_ball′)
+		end
+
+		return (r, s′)
+	end
+
+	step(s::State, a) = step(s, a, rand() < 0.5)
+
+	step(s::State, a::Tuple{Int64, Int64}, agent1_first::Bool) = step(s, (action_list[a[1]], action_list[a[2]]), agent1_first)
+
+			
+	function make_sample_environment(;width = 5, height = 4)
+		goal_y1 = Int64(height / 2)
+		goal_y2 = goal_y1 + 1
+		x_mid = floor(Int64, width / 2)
+		function initialize_state()
+			p1 = (x_mid + 2, goal_y2)
+			p2 = (x_mid, goal_y1)
+			agent1_ball = rand((true, false))
+			State((p1, p2), agent1_ball, width, height)
+		end
+
+		agent_actions = ntuple(i -> action_list, 2)
+
+		positions = Set((x, y) for x in 1:width for y in 1:height)
+		states = Vector{State{width, height, goal_y1}}()
+		for p1 in positions
+			for p2 in setdiff(positions, (p1,))
+				push!(states, State((p1, p2), true, width, height))
+				push!(states, State((p1, p2), false, width, height))
+			end
+		end
+
+		for p in positions
+			push!(states, State((p, (width+1, goal_y1)), false, width, height))
+			push!(states, State((p, (width+1, goal_y2)), false, width, height))
+			push!(states, State(((0, goal_y1), p), true, width, height))
+			push!(states, State(((0, goal_y2), p), true, width, height))
+		end
+
+		state_index = makelookup(states)
+
+		function tabular_step(i_s::Integer, a, player1_first::Bool) 
+			(r, s′) = step(states[i_s], a, player1_first)
+			i_s′ = state_index[s′]
+			(r, i_s′)
+		end
+
+		function tabular_step(i_s::Integer, a) 
+			(r, s′) = step(states[i_s], a)
+			i_s′ = state_index[s′]
+			(r, i_s′)
+		end
+
+		ptf = TabularZeroSumGameTransitionSampler(tabular_step)
+
+		terminal_states = BitVector(isterm(s) for s in states)
+
+		function initialize_state_index()
+			s0 = initialize_state()
+			state_index[s0]
+		end
+		
+		#add sampler type transition function for tabular
+		TabularStochasticGame(states, agent_actions, ptf, initialize_state_index, terminal_states; state_index = state_index)
+	end	
+
+	function make_distribution_environment(;width = 5, height = 4)
+
+		game_sampler = make_sample_environment(;width = 5, height = 4)
+
+		states = game_sampler.states
+		agent_actions = game_sampler.agent_actions
+		ptf_sampler = game_sampler.ptf
+		terminal_states = game_sampler.terminal_states
+		state_index = game_sampler.state_index
+
+		reward_transition_map = Array{Vector{Float32}, 3}(undef, length(agent_actions[1]), length(agent_actions[2]), length(states))
+		state_transition_map = Array{SparseVector{Float32, Int64}, 3}(undef, length(agent_actions[1]), length(agent_actions[2]), length(states))
+
+		for (i, inds) in enumerate(CartesianIndices(reward_transition_map))
+			i_a1 = inds[1]
+			i_a2 = inds[2]
+			i_s = inds[3]
+			probs = SparseVector{Float32, Int64}(undef, length(states))
+			rewards = Vector{Float32}()
+			
+			(r1, i_s′1) = ptf_sampler.step(i_s, (i_a1, i_a2), true)
+			probs[i_s′1] += 0.5f0
+			push!(rewards, r1)
+			
+			(r2, i_s′2) = ptf_sampler.step(i_s, (i_a1, i_a2), false)
+			probs[i_s′2] += 0.5f0
+			if i_s′2 == i_s′1
+				@assert (r2 == r1)
+			else 
+				if i_s′2 > i_s′1
+					push!(rewards, r2)
+				else
+					pushfirst!(rewards, r2)
+				end
+			end
+
+			reward_transition_map[i] = rewards
+			state_transition_map[i] = probs
+		end
+
+		ptf = TabularZeroSumGameTransition(state_transition_map, reward_transition_map)
+
+		TabularStochasticGame(states, agent_actions, ptf, game_sampler.initialize_state_index, terminal_states; state_index = state_index)
+	end
+end
+
+# ╔═╡ d00e3993-1189-49ed-803a-a8506e3b4b80
+# ╠═╡ skip_as_script = true
+#=╠═╡
+const soccer_env = TwoPlayerSoccer.make_sample_environment()
+  ╠═╡ =#
+
+# ╔═╡ 74be33d5-a7ae-4b8c-8db9-0c37e7974549
+const soccer_env_dist = TwoPlayerSoccer.make_distribution_environment()
+
+# ╔═╡ 07f82b02-a479-4b1d-824d-7d18ced98ad3
+#=╠═╡
+findall(s -> (s.agent_positions[1] == s.agent_positions[2]), soccer_env.states)
+  ╠═╡ =#
+
+# ╔═╡ db0fa811-6a74-4bf0-8806-58a4b513dd5e
+#=╠═╡
+soccer_env.ptf(soccer_env.initialize_state_index(), (3, 5))
+  ╠═╡ =#
+
+# ╔═╡ 90680746-e84b-4a63-8809-568f91cd0475
+#=╠═╡
+soccer_env_dist.ptf(soccer_env.initialize_state_index(), (3, 5))
   ╠═╡ =#
 
 # ╔═╡ cc259b71-cbe0-4990-ba6f-b495f6b0a2b7
@@ -793,18 +1209,26 @@ end
 independent_q_learning(mdp::TabularStochasticGame{T, S, A, N, P, F}, γ::T; α::T = one(T)/10, ϵ::T = one(T)/10, max_steps = 100_000, max_episodes = typemax(Int64), init_value = zero(T), qs::NTuple{N, Matrix{T}} = Tuple(ones(T, length(mdp.agent_actions[i]), length(mdp.states)) .* init_value for i in 1:N), πs::NTuple{N, Matrix{T}} = Tuple(ones(T, length(mdp.agent_actions[i]), length(mdp.states)) ./ length(mdp.agent_actions[i]) for i in 1:N), kwargs...) where {T<:Real, S, A, N, P, F<:Function} = independent_q_learning!((qs, πs), mdp, γ, α, max_episodes, max_steps, (π, q, i_s) -> make_ϵ_greedy_policy!(π, i_s, q; ϵ = ϵ); kwargs...) 
 
 # ╔═╡ d4661036-1e7a-48ba-a05a-51537b7b4910
+# ╠═╡ skip_as_script = true
+#=╠═╡
 const ex_5_3_iql = independent_q_learning(ex_5_3, 0.99f0; α = 0.01f0, max_steps = 1_000_000, save_history = true)
+  ╠═╡ =#
 
 # ╔═╡ b27cbf6a-2202-40d8-8946-7d9fc6def3e9
+# ╠═╡ skip_as_script = true
+#=╠═╡
 function get_lbf_iql_statistics(;nruns = Base.Threads.nthreads(), kwargs...)
 	1:nruns |> Map() do i
 		output = independent_q_learning(ex_5_3, 0.99f0; kwargs..., save_history = true)
 		[sum(a) for a in output.reward_history]
 	end |> foldxt((a, b) -> a .+ b) |> v -> v ./ nruns
 end
+  ╠═╡ =#
 
 # ╔═╡ 13f1c44a-ca9b-42f2-9e6c-4d7dd1658af7
+#=╠═╡
 const lbf_iql_avg = get_lbf_iql_statistics(;max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
+  ╠═╡ =#
 
 # ╔═╡ 664429bb-d0fc-409f-9760-a14827c3159a
 #=╠═╡
@@ -1569,9 +1993,14 @@ version = "17.7.0+0"
 # ╟─04715feb-f04a-4a4a-b7c5-76180e0508df
 # ╠═f6de9a64-7dee-4291-815b-7a891c52a146
 # ╠═fe796b4e-fb05-4071-ad4b-7e3ce58092c4
-# ╠═85251e1c-6704-4dc5-85dd-0c8d9706358e
+# ╠═dd64a78d-a8f1-4b9b-aa8b-95ee48936268
+# ╠═28920a55-4e8c-4dfc-84a0-03eeb13b9975
+# ╠═11b17cb5-30fa-4a66-bf71-52b4dc9f2f02
+# ╠═0b20d83b-eef0-4006-891e-9d15282ea57b
 # ╠═c42b7d58-922d-4b17-a03c-62433c9adeb9
+# ╠═71d96c8a-d036-45a9-95e4-bbf4ee079607
 # ╠═6f98c460-6d48-457d-a40c-6b8588fb01ef
+# ╠═c9b36b87-4a88-4398-95ce-4feb4f9839f7
 # ╠═ed41ec94-38be-40de-bf61-c927c242cef7
 # ╠═b815429b-fbe3-443c-9a76-d4b194eca26d
 # ╠═23a5f4c3-5f6a-473a-9ee5-0c82cf8c7f8e
@@ -1579,6 +2008,10 @@ version = "17.7.0+0"
 # ╟─ed152a1a-0fc9-40f3-91b4-e40246725847
 # ╠═79888a7b-c604-4db2-932a-ee9bfd378d9e
 # ╠═faac6925-b526-4ee0-a84c-b660e6819313
+# ╠═d2bfbf48-2ca0-483f-afab-9a292343beca
+# ╠═e838d71d-4120-4e4c-8727-82caf6a1431c
+# ╠═53c087e9-ad7d-4a83-a373-0e0d3e406724
+# ╠═3f9d927e-4158-4531-b31f-56aae3ac0c7b
 # ╠═776a9ef9-8477-449f-b195-2cc5d7c93749
 # ╠═45668f60-2dbc-48d4-9903-111b80665845
 # ╟─04b35d98-e60f-4e3c-b89d-891f7139b5ec
@@ -1602,7 +2035,7 @@ version = "17.7.0+0"
 # ╟─aa1faa8e-1e85-4ce1-91c2-adacac30e80c
 # ╟─3f61b8ad-5f70-48f1-b967-33da2169e0fb
 # ╟─a113a20e-a599-4dbb-87a0-f943245d75ce
-# ╟─57d02e2c-4387-4345-bed3-504fafcd2a26
+# ╠═57d02e2c-4387-4345-bed3-504fafcd2a26
 # ╟─ac51b4e7-3097-420d-a2dc-0d939dea5456
 # ╠═fdcfd9d8-5c2e-4e6f-a408-7c530b1bc5ff
 # ╟─1fac0df2-9ce4-40d1-9296-a067906c2b01
@@ -1616,6 +2049,13 @@ version = "17.7.0+0"
 # ╠═c9694e12-001f-4f14-867e-7ca1659d36a8
 # ╠═791a661b-77fd-4ddd-8b82-56c64dcc5c22
 # ╠═1f7c4a86-d530-4d17-9640-6c1c7315f1bc
+# ╟─775fd220-532d-49ba-968f-20781c5d6708
+# ╠═604461b5-484e-468d-ada7-8f70d3b222c8
+# ╠═d00e3993-1189-49ed-803a-a8506e3b4b80
+# ╠═74be33d5-a7ae-4b8c-8db9-0c37e7974549
+# ╠═07f82b02-a479-4b1d-824d-7d18ced98ad3
+# ╠═db0fa811-6a74-4bf0-8806-58a4b513dd5e
+# ╠═90680746-e84b-4a63-8809-568f91cd0475
 # ╟─cc259b71-cbe0-4990-ba6f-b495f6b0a2b7
 # ╠═ff335a51-e2ed-4313-af7b-1983c0a488a7
 # ╠═3ab5ea43-f8d5-46ac-a407-fd7c9af50540
