@@ -188,17 +188,97 @@ soccer_game.states[i_s0_soccer]
 # ╔═╡ 69ed465f-7d0b-480b-90a2-186f51258b38
 const soccer_random_policies = make_random_policies(soccer_game)
 
+# ╔═╡ bfd2d1a0-7b3e-4fbf-9a29-22de88bbc08d
+#compare solution states with different discount rates to see which states are affected by that
+#show policy and value as a grid with one agent in place and the other squqares show the value/policy for the first agent when the second agent is in that square, this would be more useful for value to see what is desirable for the position of the second agent when you are the first
+#add value iteration for policy to train against one of these.  Need to create stochastic distribution MDP based on the other agent's policies
+#note that the non-game based algorithms cannot reproduce stochastic policies like what is needed for some of the game states
+
+# ╔═╡ 2a420894-33a5-401f-adf9-4253f648ae42
+soccer_game.agent_actions
+
 # ╔═╡ 5da718f5-c940-49a3-9c38-7af26a930439
 md"""
 # Visualization Tools
 """
+
+# ╔═╡ 52a51c78-4438-44b2-8315-9cffd8ba2581
+md"""
+## General
+"""
+
+# ╔═╡ b053dc54-af90-463e-8510-38c33be32312
+#=╠═╡
+function addelements(e1, e2)
+	@htl("""
+	$e1
+	$e2
+	""")
+end
+  ╠═╡ =#
+
+# ╔═╡ f338dda8-79b1-4c54-90ee-400e29b9d0b0
+#=╠═╡
+const rook_action_display = @htl("""
+<div style = "display: flex; flex-direction: column; align-items: center; justify-content: center; color: black; background-color: rgba(100, 100, 100, 0.1);">
+	<div style = "display: flex; align-items: center; justify-content: center;">
+	<div class = "downarrow" style = "transform: rotate(90deg);"></div>
+	<div class = "downarrow" style = "position: absolute; transform: rotate(180deg);"></div>
+	<div class = "downarrow" style = "position: absolute; transform: rotate(270deg);"></div>
+	<div class = "downarrow" style = "position: absolute;"></div>
+	</div>
+	<div>Actions</div>
+</div>
+""")
+  ╠═╡ =#
+
+# ╔═╡ 065ba539-ac92-4117-a1a3-d44d21237e34
+HTML("""
+<style>
+	.downarrow {
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		flex-direction: column;
+	}
+
+	.downarrow::before {
+		content: '';
+		width: 2px;
+		height: 40px;
+		background-color: black;
+	}
+	.downarrow::after {
+		content: '';
+		width: 0px;
+		height: 0px;
+		border-left: 5px solid transparent;
+		border-right: 5px solid transparent;
+		border-top: 10px solid black;
+	}
+
+	.idle {
+	 	width: 15px;
+	 	height: 15px;
+	 	background-color: black;
+	 	border-radius: 50%;
+	}
+
+	.gridcell {
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			border: 1px solid black;
+		}
+</style>
+""")
 
 # ╔═╡ 697e2312-c9a6-47b3-b13c-277ad4b0efb2
 md"""
 ## Soccer Game
 """
 
-# ╔═╡ d056d56d-3c46-4d3d-8789-e1ad4aa41bf1
+# ╔═╡ 7ab9b64b-6571-4cd4-bf9f-6ad00015dac8
 #=╠═╡
 function plot_soccer_state(s::TwoPlayerSoccer.State{W, H, GH}) where {W, H, GH}	
 	tr1 = scatter(x = [s.agent_positions[1][1]], y = [s.agent_positions[1][2]], mode = "markers", marker_size = 30, name = "A", marker_color = s.agent1_ball ? "black" : "rgba(0, 0, 0, 0)", marker_line = attr(width = 3, color = "blue"))
@@ -227,6 +307,54 @@ end
 # ╔═╡ a5901beb-eac1-4056-b0e0-1add182b061d
 #=╠═╡
 plot_soccer_state(soccer_game.states[vcat(soccer_rnd_ep[1], soccer_rnd_ep[4])[ep_step]])
+  ╠═╡ =#
+
+# ╔═╡ 7eb2de3f-6a7d-485b-a740-9da4cc03484d
+#=╠═╡
+plot_soccer_state(soccer_game.states[59])
+  ╠═╡ =#
+
+# ╔═╡ ab3793ad-1069-4b77-a95a-4474fcd7c662
+#=╠═╡
+function display_soccer_policy(v::AbstractVector{T}; scale = 1.0) where T<:Real
+	@htl("""
+		<div style = "display: flex; align-items: center; justify-content: center; transform: scale($scale);">
+		<div class = "downarrow" style = "position: absolute; transform: rotate(180deg); opacity: $(v[1]);"></div>	
+		<div class = "downarrow" style = "position: absolute; opacity: $(v[2])"></div>
+		<div class = "downarrow" style = "position: absolute; transform: rotate(90deg); opacity: $(v[3])"></div>
+		<div class = "downarrow" style = "transform: rotate(-90deg); opacity: $(v[4])"></div>
+		<div class = "idle" style = "position: absolute; opacity: $(v[5])"></div>
+		</div>
+	""")
+end
+  ╠═╡ =#
+
+# ╔═╡ d056d56d-3c46-4d3d-8789-e1ad4aa41bf1
+#=╠═╡
+function plot_soccer_solution(s::TwoPlayerSoccer.State{W, H, GH}, πs::Tuple{Matrix, Matrix}, value_function::Vector) where {W, H, GH}	
+	state_plot = plot_soccer_state(s)
+	i_s = soccer_game.state_index[s]
+	v1 = πs[1][:, i_s]
+	v2 = πs[2][:, i_s]
+	π1_disp = display_soccer_policy(v1)
+	π2_disp = display_soccer_policy(v2)
+
+	@htl("""
+	<div style = "width: 600px;">
+		<div style = "display: flex; justify-content: space-around; background-color: white; color: black;">
+		 <div>
+		  Player 1 Value/Policy: $(value_function[i_s])
+		 $π1_disp
+		 </div>
+		 <div>
+		  Player 2 Value/Policy: $(-value_function[i_s])
+		 $π2_disp
+		 </div>
+		 </div>
+		 $state_plot
+	</div>
+		 """)
+end
   ╠═╡ =#
 
 # ╔═╡ 9d54ee68-d60c-11f0-87d1-3be62822741b
@@ -370,11 +498,15 @@ function value_iteration_game!(v_est::Vector{T}, πs::NTuple{2, Matrix{T}}, m_es
 		for i_s in eachindex(v_est)
 			v_old = v_est[i_s]
 			v_est[i_s] = solve_minimax_game!(reward_matrix, πs[1], model1, x, m_est, i_s, true)
-			solve_minimax_game!(reward_matrix, πs[2], model2, y, m_est, i_s, false)
+			
 			delta_max = max(abs(v_old - v_est[i_s]), delta_max)
 		end
 		sweep += 1
 		show_message && @info "After $(sweep) sweeps, maximum value change is $delta_max"
+	end
+
+	for i_s in eachindex(v_est)
+		solve_minimax_game!(reward_matrix, πs[2], model2, y, m_est, i_s, false)
 	end
 
 	return (final_values = v_est, total_sweeps = sweep, final_policies = πs, game_rewards = m_est)
@@ -390,20 +522,33 @@ end
 # ╔═╡ 439fff54-57e8-409e-994e-55e536d2ea0b
 const soccer_value_iter = value_iteration_game(soccer_game, 0.9f0; θ = 1f-3)
 
+# ╔═╡ 3d9d265a-35d3-4f23-adbc-99f32d19350e
+filter(a -> maximum(a) != 1, eachcol(soccer_value_iter.final_policies[1]))
+
 # ╔═╡ d9286880-143e-43e3-bff4-4e33cc3c10bd
 soccer_value_iter.final_values[i_s0_soccer]
 
 # ╔═╡ fd270bad-7ccd-46e0-ac22-30c6a3ae925f
-const soccer_ideal_ep = runepisode(soccer_game; πs = (soccer_value_iter.final_policies[1], soccer_random_policies[2]), max_steps = 10_000)
+const soccer_ideal_ep = runepisode(soccer_game; πs = (soccer_value_iter.final_policies[1], soccer_value_iter.final_policies[2]), max_steps = 10_000)
 
 # ╔═╡ f6a1e935-52c3-4f8d-83a9-9a82850b38f9
 #=╠═╡
 @bind ep_step_ideal Slider(1:length(soccer_ideal_ep[1])+1)
   ╠═╡ =#
 
+# ╔═╡ 4413ba09-3dbc-4e87-9adf-d9e62efa4aac
+#=╠═╡
+soccer_state_index = vcat(soccer_ideal_ep[1], soccer_ideal_ep[4])[ep_step_ideal]
+  ╠═╡ =#
+
+# ╔═╡ 2276c50d-b556-495c-9b0b-efc19b8f2a99
+#=╠═╡
+soccer_value_iter.final_policies[1][:, soccer_state_index]
+  ╠═╡ =#
+
 # ╔═╡ 1e13f0be-7b17-40e9-81e1-1b176869f175
 #=╠═╡
-plot_soccer_state(soccer_game.states[vcat(soccer_ideal_ep[1], soccer_ideal_ep[4])[ep_step_ideal]])
+plot_soccer_solution(soccer_game.states[soccer_state_index], soccer_value_iter.final_policies, soccer_value_iter.final_values)
   ╠═╡ =#
 
 # ╔═╡ f0b2edf8-ba0a-464e-bc78-4035728b7c54
@@ -411,6 +556,17 @@ plot_soccer_state(soccer_game.states[vcat(soccer_ideal_ep[1], soccer_ideal_ep[4]
 
 # ╔═╡ 0f1dcee0-3e52-43d4-a79e-b76e81e7cc30
 0:10000 |> Map(i -> runepisode(soccer_game; πs = (soccer_random_policies[2], soccer_value_iter.final_policies[2] .+ eps(1f0)), max_steps = 10000)[3] |> length) |> foldxt(+) |> x -> x / 10000
+
+# ╔═╡ 93924c93-e859-471d-8505-f7213b1ef5f6
+#=╠═╡
+plot_soccer_solution(soccer_game.states[1], soccer_value_iter.final_policies, soccer_value_iter.final_values)
+  ╠═╡ =#
+
+# ╔═╡ 19b92b1c-df1f-43b6-9504-cfbfc6524465
+# ╠═╡ show_logs = false
+#=╠═╡
+@plutoprofview value_iteration_game(soccer_game, 0.9f0; θ = 1f-3)
+  ╠═╡ =#
 
 # ╔═╡ 0de23d03-fc68-4b8b-9d0a-468e40ceee9a
 html"""
@@ -1287,19 +1443,33 @@ version = "17.7.0+0"
 # ╠═2eb915ed-16c2-4ea0-bf5f-5d1456249224
 # ╠═af0265b8-7fe9-499a-b675-32bf5ba76f64
 # ╠═439fff54-57e8-409e-994e-55e536d2ea0b
+# ╠═3d9d265a-35d3-4f23-adbc-99f32d19350e
+# ╠═19b92b1c-df1f-43b6-9504-cfbfc6524465
 # ╠═ae3a776d-65a2-4797-935c-53e6c5bffa58
 # ╠═2621b3be-cf6c-4431-8986-583446124fed
 # ╠═84f56ea1-9222-4fc2-a427-5c9b8b9468ed
 # ╠═d9286880-143e-43e3-bff4-4e33cc3c10bd
 # ╠═69ed465f-7d0b-480b-90a2-186f51258b38
 # ╠═fd270bad-7ccd-46e0-ac22-30c6a3ae925f
+# ╠═bfd2d1a0-7b3e-4fbf-9a29-22de88bbc08d
 # ╟─f6a1e935-52c3-4f8d-83a9-9a82850b38f9
+# ╠═2276c50d-b556-495c-9b0b-efc19b8f2a99
 # ╠═1e13f0be-7b17-40e9-81e1-1b176869f175
+# ╠═2a420894-33a5-401f-adf9-4253f648ae42
+# ╠═4413ba09-3dbc-4e87-9adf-d9e62efa4aac
 # ╠═f0b2edf8-ba0a-464e-bc78-4035728b7c54
 # ╠═0f1dcee0-3e52-43d4-a79e-b76e81e7cc30
+# ╠═7eb2de3f-6a7d-485b-a740-9da4cc03484d
 # ╟─5da718f5-c940-49a3-9c38-7af26a930439
+# ╟─52a51c78-4438-44b2-8315-9cffd8ba2581
+# ╠═b053dc54-af90-463e-8510-38c33be32312
+# ╠═f338dda8-79b1-4c54-90ee-400e29b9d0b0
+# ╠═065ba539-ac92-4117-a1a3-d44d21237e34
 # ╟─697e2312-c9a6-47b3-b13c-277ad4b0efb2
+# ╠═93924c93-e859-471d-8505-f7213b1ef5f6
 # ╠═d056d56d-3c46-4d3d-8789-e1ad4aa41bf1
+# ╠═7ab9b64b-6571-4cd4-bf9f-6ad00015dac8
+# ╠═ab3793ad-1069-4b77-a95a-4474fcd7c662
 # ╟─9d54ee68-d60c-11f0-87d1-3be62822741b
 # ╠═20a8c921-816f-4c5c-9341-b7749644d249
 # ╠═c3e732e2-2a10-4de3-800f-0378e0acd0dc
