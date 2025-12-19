@@ -98,7 +98,7 @@ begin
 end
 
 # ╔═╡ 11b17cb5-30fa-4a66-bf71-52b4dc9f2f02
-sample_joint_action(πs::NTuple{N, M}, i_s::Integer) where {N, T<:Real, M <:AbstractMatrix{T}} = Tuple(sample_action(πs[n], i_s) for n in 1:N)
+sample_joint_action(πs::NTuple{N, M}, i_s::Integer) where {N, T<:Real, M <:AbstractMatrix{T}} = NTuple{N, Int64}(sample_action(πs[n], i_s) for n in 1:N)
 
 # ╔═╡ dd64a78d-a8f1-4b9b-aa8b-95ee48936268
 function (ptf::AbstractGameTransition{T, N})(s, πs::NTuple{N, A}) where {T<:Real, A<:AbstractMatrix{T}, N}
@@ -331,6 +331,9 @@ function TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, 2,
 	
 	TabularMDP(stochastic_game.states, agent_actions[agent_index], ptf, stochastic_game.initialize_state_index, stochastic_game.terminal_states; state_index = stochastic_game.state_index)
 end
+
+# ╔═╡ 862ff813-18fd-4dd5-86f0-b5cc8e9a021d
+#add this conversion for distribution transitions as well
 
 # ╔═╡ 776a9ef9-8477-449f-b195-2cc5d7c93749
 # ╠═╡ skip_as_script = true
@@ -641,6 +644,8 @@ module LevelBasedForaging
 		num_items = 2
 		max_agent_level = 1
 		max_item_level = 2
+
+		reset_positions = [false, false]
 		
 		grid_positions = [(x, y) for x in 1:width for y in 1:height]
 		position_set = Set(grid_positions)
@@ -664,17 +669,19 @@ module LevelBasedForaging
 		clamp_positions(p::Position) = (clamp(p[1], 1, width), clamp(p[2], 1, height))
 
 		function step(s::ForagingState{2, M}, a::NTuple{2, I}) where {M, I<:Integer}
+			s.agent_positions[1] == s.agent_positions[2] && error("s: agents cannot occupy same position")
 			isterm(s) && return ([0f0, 0f0], s)
 			s′ = deepcopy(s)
 			for i in 1:2
-				s′.agent_positions[i] = move(s.agent_positions[i], a[i])
-			end
-			
-			for i in 1:2
-				p′ = s′.agent_positions[i]
-				if !in(p′, s.available_positions) || in(p′, view(s′.agent_positions, 1:i-1)) || in(p′, view(s′.agent_positions, i+1:2))
-					s′.agent_positions[i] = s.agent_positions[i]
+				p′ = move(s.agent_positions[i], a[i])
+				if in(p′, s.available_positions)
+					s′.agent_positions[i] = p′
 				end
+			end
+
+			if s′.agent_positions[1] == s′.agent_positions[2]
+				s′.agent_positions[1] = s.agent_positions[1]
+				s′.agent_positions[2] = s.agent_positions[2]
 			end
 
 			(rewards, item_checks) = attempt_collect(s, a)
@@ -942,6 +949,8 @@ module TwoPlayerSoccer
 	const action_list = [Up(), Down(), Left(), Right(), Noop()]
 	const action_index = makelookup(action_list)
 
+	const action_list_tuple = (Up(), Down(), Left(), Right(), Noop())
+
 	struct State{Width, Height, GoalHeight}
 		agent_positions::Tuple{Position, Position}
 		agent1_ball::Bool
@@ -968,25 +977,25 @@ module TwoPlayerSoccer
 	move(p::Position, ::Down) = (p[1], p[2]-1)
 	move(p::Position, ::Left) = (p[1]-1, p[2])
 
-	move(p::Position, i_a::Integer) = move(p, action_list[i_a])
+	move(p::Position, i_a::Integer) = move(p, action_list_tuple[i_a])
 
 	
-	function step(s::State{W, H, GH}, a::Tuple{Move, Move}, agent1_first::Bool) where {W, H, GH}
+	function step(s::State{W, H, GH}, (a1, a2)::Tuple{M1, M2}, agent1_first::Bool) where {W, H, GH, M1<:Move, M2<:Move}
 		isterm(s) && return (0f0, s)
-		(i1, i2, i1ball, i1score_x, i2score_x) = if agent1_first
-			(1, 2, s.agent1_ball, 0, W+1)
+		(i1, i2, i1ball, i1score_x, i2score_x, a_first, a_second) = if agent1_first
+			(1, 2, s.agent1_ball, 0, W+1, a1, a2)
 		else
-			(2, 1, !s.agent1_ball, W+1, 0)
+			(2, 1, !s.agent1_ball, W+1, 0, a2, a1)
 		end
 
 		switch_ball = false
-		p1′ = move(s.agent_positions[i1], a[i1])
+		p1′ = move(s.agent_positions[i1], a_first)
 		move_into1 = (clamp(p1′[1], 1, W) == s.agent_positions[i2][1]) && (clamp(p1′[2], 1, H) == s.agent_positions[i2][2])
 		if move_into1
 			p1′ = s.agent_positions[i1]
 		end
 
-		p2′ = move(s.agent_positions[i2], a[i2])
+		p2′ = move(s.agent_positions[i2], a_second)
 		move_into2 = (clamp(p2′[1], 1, W) == clamp(p1′[1], 1, W)) && (clamp(p2′[2], 1, H) == clamp(p1′[2], 1, H))
 		
 		switch_ball = (move_into1 && i1ball) || (move_into2 && !i1ball)
@@ -1023,11 +1032,8 @@ module TwoPlayerSoccer
 
 		return (r, s′)
 	end
-
-	step(s::State, a) = step(s, a, rand() < 0.5)
-
-	step(s::State, a::Tuple{Int64, Int64}, agent1_first::Bool) = step(s, (action_list[a[1]], action_list[a[2]]), agent1_first)
-
+	
+	# step(s::State, a) = step(s, a, rand(Bool))
 			
 	function make_sample_environment(;width = 5, height = 4)
 		goal_y1 = Int64(height / 2)
@@ -1058,16 +1064,10 @@ module TwoPlayerSoccer
 			push!(states, State(((0, goal_y2), p), true, width, height))
 		end
 
-		state_index = makelookup(states)
+		state_index = Dict{State{width, height, goal_y1}, Int64}(makelookup(states))
 
-		function tabular_step(i_s::Integer, a, player1_first::Bool) 
-			(r, s′) = step(states[i_s], a, player1_first)
-			i_s′ = state_index[s′]
-			(r, i_s′)
-		end
-
-		function tabular_step(i_s::Integer, a) 
-			(r, s′) = step(states[i_s], a)
+		function tabular_step(i_s::Integer, (i_a1, i_a2)::Tuple{Int64, Int64}, agent1_first::Bool = rand(Bool)) 
+			(r, s′) = step(states[i_s], (action_list_tuple[i_a1], action_list_tuple[i_a2]), agent1_first)
 			i_s′ = state_index[s′]
 			(r, i_s′)
 		end
@@ -1138,7 +1138,10 @@ const soccer_env = TwoPlayerSoccer.make_sample_environment()
   ╠═╡ =#
 
 # ╔═╡ 74be33d5-a7ae-4b8c-8db9-0c37e7974549
+# ╠═╡ skip_as_script = true
+#=╠═╡
 const soccer_env_dist = TwoPlayerSoccer.make_distribution_environment()
+  ╠═╡ =#
 
 # ╔═╡ 07f82b02-a479-4b1d-824d-7d18ced98ad3
 #=╠═╡
@@ -1160,53 +1163,109 @@ md"""
 # Independing Learning Algorithms
 """
 
+# ╔═╡ 9b75d562-ac45-406a-867b-b6d2af5822ee
+#for a general sum game, the rewards are a tuple of values with one value per agent.  In a zero sum game and common reward game, there is only one reward value.  For a zero sum game that value is negative for agent 2 and positive for agent 1.  In a common reward game it is equal for all agents.
+begin
+	get_game_reward(ptf, rewards::NTuple{N, T}, n::Integer) where {N, T<:Real} = rewards[n]
+	get_game_reward(::AbstractTabularZeroSumGameTransition{T}, r::T, ::Val{1}) where T<:Real = r
+	get_game_reward(::AbstractTabularZeroSumGameTransition{T}, r::T, ::Val{2}) where T<:Real = -r
+	get_game_reward(ptf::AbstractTabularZeroSumGameTransition{T}, r::T, n::Integer) where T<:Real = get_game_reward(ptf, r, Val(n))
+	get_game_reward(::AbstractTabularCommonRewardGameTransition{T}, r::T, ::Integer) where T<:Real = r
+end
+
+# ╔═╡ c755f0b1-2299-42b4-a28d-d53980260e79
+begin
+	initialize_reward_history(::AbstractTabularGameTransition{T, N}) where {N, T<:Real} = Vector{NTuple{N, T}}()
+	initialize_reward_history(::AbstractTabularZeroSumGameTransition{T}) where T<:Real = Vector{T}()
+	initialize_reward_history(::AbstractTabularCommonRewardGameTransition{T}) where T<:Real = Vector{T}()
+end
+
+# ╔═╡ 50422bb8-ff98-4803-8a3b-9a42454d793d
+function get_max_q(q::Matrix{T}, i_s::Integer) where T<:Real
+	maxq = typemin(T)
+	@inbounds @simd for i_a in 1:size(q, 1)
+		maxq = max(maxq, q[i_a, i_s])
+	end
+	return maxq
+end
+
 # ╔═╡ ff335a51-e2ed-4313-af7b-1983c0a488a7
-function independent_q_learning!((value_estimates, policies)::Tuple{NTuple{N, Matrix{T}}, NTuple{N, Matrix{T}}}, mdp::TabularStochasticGame{T, S, A, N, P, F}, γ::T, α::T, max_episodes::Integer, max_steps::Integer, policy_update!::Function; i_s0 = mdp.initialize_state_index(), save_history = false) where {T<:Real,S, A, P, F<:Function, N}
+function independent_q_learning!((value_estimates, policies)::Tuple{NTuple{N, Matrix{T}}, NTuple{N, Matrix{T}}}, game::TabularStochasticGame{T, S, A, N, P, F}, γ::T, max_episodes::Integer, max_steps::Integer; i_s0 = game.initialize_state_index(), save_history = false, train_policies::AbstractVector{I} = 1:N, α::T = one(T) / 10, α_decay::T = one(T), ϵ::T = one(T) / 10) where {T<:Real,S, A, P, F<:Function, N, I <: Integer}
 	ep = 1
 	step = 0
 	i_s = i_s0
-	#there might be two policies in the case of off policy learning with a target and behavior policy.   the convention is that if there is a behavior policy that should be used to sample actions, it will be last
-	a = Tuple(sample_action(policies[i], i_s) for i in 1:N)
+	
+	a = zeros(Int64, N)
 
-	if save_history
-		reward_history = Vector{NTuple{N, T}}()
-		episode_steps = Vector{Int64}()
-	end
+	α_step = α
+
+	reward_history = initialize_reward_history(game.ptf)
+	episode_steps = Vector{Int64}()
 	
 	while (ep < max_episodes) && (step < max_steps)
-		a = Tuple(sample_action(policies[i], i_s) for i in 1:N)
-		rewards, i_s′ = mdp.ptf(i_s, a)
+		@inbounds @simd for n in 1:N
+			a[n] = sample_action(policies[n], i_s)
+		end
+		
+		rewards, i_s′ = game.ptf(i_s, NTuple{N, Int64}(a))
 		step += 1
 		
-		for n in 1:N
+		for n in train_policies
 			qs = value_estimates[n]
-			r = rewards[n]
+			r = get_game_reward(game.ptf, rewards, n)
 			i_a = a[n]
-			qs[i_a, i_s] += α*(r + γ*maximum(view(qs, :, i_s′)) - qs[i_a, i_s])
-			policy_update!(policies[n], qs, i_s)
+			max_q′ = get_max_q(qs, i_s′)
+			qs[i_a, i_s] += α_step*(r + γ*max_q′ - qs[i_a, i_s])
+			make_ϵ_greedy_policy!(policies[n], i_s, qs; ϵ = ϵ)
 		end
 		
 
 		if save_history
 			push!(reward_history, rewards)
 		end
+		
 		#if a terminal state is reached, need to reset episode
-		if mdp.terminal_states[i_s′]
+		if game.terminal_states[i_s′]
 			save_history && push!(episode_steps, step)
 			ep += 1
-			i_s = mdp.initialize_state_index()
-			a = Tuple(sample_action(policies[i], i_s) for i in 1:N)
+			i_s = game.initialize_state_index()
 		else
 			i_s = i_s′
 		end
+
+		α_step *= α_decay
 	end
-	basereturn = (value_estimates = value_estimates, policies = policies)
-	!save_history && return basereturn
-	(;basereturn..., reward_history = reward_history, episode_steps = episode_steps)
+
+	for n in train_policies
+		for i_s in eachindex(game.states)
+			make_greedy_policy!(policies[n], i_s, value_estimates[n])
+		end
+	end
+	
+	(value_estimates = value_estimates, policies = policies, reward_history = reward_history, episode_steps = episode_steps)
+end
+
+# ╔═╡ 3f44f098-5aef-4287-901e-67a6062f0f02
+function make_random_policies(game::TabularStochasticGame{T, S, A, N, P, F}) where {T<:Real, S, A, P, F, N}
+	n_actions = Tuple(length(a) for a in game.agent_actions)
+	n_states = length(game.states)
+	Tuple(ones(T, n_actions[n], n_states) ./ n_actions[n] for n in 1:N)
+end
+
+# ╔═╡ d95d9945-944a-497b-b07b-7b4d4eb1f01d
+function initialize_agent_action_values(game::TabularStochasticGame{T, S, A, N, P, F}, init_value::T) where {T<:Real, S, A, P, F<:Function, N}
+	n_actions = Tuple(length(a) for a in game.agent_actions)
+	n_states = length(game.states)
+	Tuple(ones(T, n_actions[n], n_states) .* init_value for n in 1:N)
 end
 
 # ╔═╡ 3ab5ea43-f8d5-46ac-a407-fd7c9af50540
-independent_q_learning(mdp::TabularStochasticGame{T, S, A, N, P, F}, γ::T; α::T = one(T)/10, ϵ::T = one(T)/10, max_steps = 100_000, max_episodes = typemax(Int64), init_value = zero(T), qs::NTuple{N, Matrix{T}} = Tuple(ones(T, length(mdp.agent_actions[i]), length(mdp.states)) .* init_value for i in 1:N), πs::NTuple{N, Matrix{T}} = Tuple(ones(T, length(mdp.agent_actions[i]), length(mdp.states)) ./ length(mdp.agent_actions[i]) for i in 1:N), kwargs...) where {T<:Real, S, A, N, P, F<:Function} = independent_q_learning!((qs, πs), mdp, γ, α, max_episodes, max_steps, (π, q, i_s) -> make_ϵ_greedy_policy!(π, i_s, q; ϵ = ϵ); kwargs...) 
+independent_q_learning(game::TabularStochasticGame{T, S, A, N, P, F}, γ::T; max_steps = 100_000, max_episodes = typemax(Int64), init_value = zero(T), qs::NTuple{N, Matrix{T}} = initialize_agent_action_values(game, init_value), πs::NTuple{N, Matrix{T}} = make_random_policies(game), kwargs...) where {T<:Real, S, A, N, P, F<:Function} = independent_q_learning!((qs, πs), game, γ, max_episodes, max_steps; kwargs...) 
+
+# ╔═╡ eec99b81-8150-4a65-90a0-283cd5da877a
+md"""
+## Level-Based Foraging Test (General Sum Game)
+"""
 
 # ╔═╡ d4661036-1e7a-48ba-a05a-51537b7b4910
 # ╠═╡ skip_as_script = true
@@ -1233,6 +1292,21 @@ const lbf_iql_avg = get_lbf_iql_statistics(;max_steps = 1_000_000, α = 0.2f0, �
 # ╔═╡ 664429bb-d0fc-409f-9760-a14827c3159a
 #=╠═╡
 plot_episode_rewards([lbf_sarsa_avg, lbf_expected_sarsa_avg, lbf_q_learning_avg, lbf_double_q_learning_avg, lbf_iql_avg], ["Sarsa", "Expected Sarsa", "Q-learning", "Double Q-learning", "Independent Q-learning"], 30_000)
+  ╠═╡ =#
+
+# ╔═╡ 8c6f4ab7-9172-4723-bc2b-e61fe0315e1c
+md"""
+## Soccer Game Test (Zero Sum Game)
+"""
+
+# ╔═╡ bf52bae8-97d4-40b3-80c9-4afa2f77bd99
+#=╠═╡
+const soccer_sample_iql = independent_q_learning(soccer_env, 0.9f0; α = 0.1f0, max_steps = 1_000_000, save_history = true)
+  ╠═╡ =#
+
+# ╔═╡ 4e008a70-2536-440a-afcb-c8b9772f4c8c
+#=╠═╡
+const soccer_dist_iql = independent_q_learning(soccer_env_dist, 0.9f0; α = 0.1f0, max_steps = 1_000_000, save_history = true)
   ╠═╡ =#
 
 # ╔═╡ 75a6b525-a507-4cf0-9ba7-ec1e76e86465
@@ -1346,7 +1420,7 @@ PlutoUI = "~0.7.75"
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.12.2"
+julia_version = "1.12.3"
 manifest_format = "2.0"
 project_hash = "170a5c24fc6462387ae568ecfb37939d5fab920d"
 
@@ -1719,7 +1793,7 @@ version = "2.8.3"
 [[deps.Pkg]]
 deps = ["Artifacts", "Dates", "Downloads", "FileWatching", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "Random", "SHA", "TOML", "Tar", "UUIDs", "p7zip_jll"]
 uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
-version = "1.12.0"
+version = "1.12.1"
 weakdeps = ["REPL"]
 
     [deps.Pkg.extensions]
@@ -2012,6 +2086,7 @@ version = "17.7.0+0"
 # ╠═e838d71d-4120-4e4c-8727-82caf6a1431c
 # ╠═53c087e9-ad7d-4a83-a373-0e0d3e406724
 # ╠═3f9d927e-4158-4531-b31f-56aae3ac0c7b
+# ╠═862ff813-18fd-4dd5-86f0-b5cc8e9a021d
 # ╠═776a9ef9-8477-449f-b195-2cc5d7c93749
 # ╠═45668f60-2dbc-48d4-9903-111b80665845
 # ╟─04b35d98-e60f-4e3c-b89d-891f7139b5ec
@@ -2035,7 +2110,7 @@ version = "17.7.0+0"
 # ╟─aa1faa8e-1e85-4ce1-91c2-adacac30e80c
 # ╟─3f61b8ad-5f70-48f1-b967-33da2169e0fb
 # ╟─a113a20e-a599-4dbb-87a0-f943245d75ce
-# ╠═57d02e2c-4387-4345-bed3-504fafcd2a26
+# ╟─57d02e2c-4387-4345-bed3-504fafcd2a26
 # ╟─ac51b4e7-3097-420d-a2dc-0d939dea5456
 # ╠═fdcfd9d8-5c2e-4e6f-a408-7c530b1bc5ff
 # ╟─1fac0df2-9ce4-40d1-9296-a067906c2b01
@@ -2057,12 +2132,21 @@ version = "17.7.0+0"
 # ╠═db0fa811-6a74-4bf0-8806-58a4b513dd5e
 # ╠═90680746-e84b-4a63-8809-568f91cd0475
 # ╟─cc259b71-cbe0-4990-ba6f-b495f6b0a2b7
+# ╠═9b75d562-ac45-406a-867b-b6d2af5822ee
+# ╠═c755f0b1-2299-42b4-a28d-d53980260e79
+# ╠═50422bb8-ff98-4803-8a3b-9a42454d793d
 # ╠═ff335a51-e2ed-4313-af7b-1983c0a488a7
+# ╠═3f44f098-5aef-4287-901e-67a6062f0f02
+# ╠═d95d9945-944a-497b-b07b-7b4d4eb1f01d
 # ╠═3ab5ea43-f8d5-46ac-a407-fd7c9af50540
+# ╟─eec99b81-8150-4a65-90a0-283cd5da877a
 # ╠═d4661036-1e7a-48ba-a05a-51537b7b4910
 # ╠═b27cbf6a-2202-40d8-8946-7d9fc6def3e9
 # ╠═13f1c44a-ca9b-42f2-9e6c-4d7dd1658af7
 # ╠═664429bb-d0fc-409f-9760-a14827c3159a
+# ╟─8c6f4ab7-9172-4723-bc2b-e61fe0315e1c
+# ╠═bf52bae8-97d4-40b3-80c9-4afa2f77bd99
+# ╠═4e008a70-2536-440a-afcb-c8b9772f4c8c
 # ╟─75a6b525-a507-4cf0-9ba7-ec1e76e86465
 # ╟─9a0a63a1-0292-4937-9d7f-8c18bc3eb28b
 # ╠═924d646f-8fd7-4b0b-a5c5-0446abb6434e

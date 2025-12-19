@@ -35,24 +35,12 @@ end
 
 # ╔═╡ c62ca696-4fbe-42e2-ab00-4a916f9fac8d
 md"""
-# Stochastic Game Utilities
+# Tabular Stochastic Game Utilities
 """
-
-# ╔═╡ 393419ba-28fb-417e-ab2a-fafe857d0814
-md"""
-## Tabular Games
-"""
-
-# ╔═╡ 6eebd434-1520-4885-a5ca-139fc916bd7a
-function make_random_policies(game::TabularStochasticGame{T, S, A, N, P, F}) where {T<:Real, S, A, P, F, N}
-	n_actions = Tuple(length(a) for a in game.agent_actions)
-	n_states = length(game.states)
-	Tuple(ones(T, n_actions[n], n_states) ./ n_actions[n] for n in 1:N)
-end
 
 # ╔═╡ 844c29f5-fe4d-49cc-9dab-4b0ed6256a85
 begin
-	function TabularRL.runepisode!((states, joint_actions, rewards)::Tuple{Vector{Int64}, Vector{NTuple{N, Int64}}, Vector{R}}, game::TabularStochasticGame{T, S, A, N, P, F}; i_s0::Integer = game.initialize_state_index(), πs::NTuple{N, M} = make_random_policies(game), a0::NTuple{N, Int64} = sample_joint_action(πs, i_s0), max_steps = Inf) where {T<:Real, T2<:Real, S, A, P, F, N, M <: AbstractMatrix{T2}, R<:Union{NTuple{N, T}, T}}
+	function TabularRL.runepisode!((states, joint_actions, rewards)::Tuple{Vector{Int64}, Vector{NTuple{N, Int64}}, R}, game::TabularStochasticGame{T, S, A, N, P, F}; i_s0::Integer = game.initialize_state_index(), πs::NTuple{N, M} = make_random_policies(game), a0::NTuple{N, Int64} = sample_joint_action(πs, i_s0), max_steps = Inf) where {T<:Real, S, A, P, F, N, M <: AbstractMatrix{T2} where T2<:Real, R<:Union{Vector{NTuple{N, T}}, Vector{T}}}
 		@assert any(game.terminal_states) #ensure that some terminal state exists since episodes are only defined for problems with terminal states
 		i_s = i_s0
 		l = length(states)
@@ -106,6 +94,11 @@ begin
 	end
 end
 
+# ╔═╡ 798386fc-f572-4cff-9222-00ab3452faae
+md"""
+## Soccer Game Example
+"""
+
 # ╔═╡ 3120f952-d848-4f37-b20c-922b5e897587
 const soccer_game = TwoPlayerSoccer.make_distribution_environment()
 
@@ -114,17 +107,44 @@ const soccer_rnd_ep = runepisode(soccer_game; max_steps = 1000)
 
 # ╔═╡ c3e5baea-2b49-4084-83c2-ec0a9402d297
 #=╠═╡
-@bind ep_step Slider(1:length(soccer_rnd_ep[1])+1)
+@bind ep_step Slider(1:length(soccer_rnd_ep[1])+1; show_value=true)
   ╠═╡ =#
 
-# ╔═╡ 48df4121-7e87-4514-b852-ec1c00e7a232
-# ╠═╡ disabled = true
-#=╠═╡
-@bind ep_step Clock(;max_value = length(soccer_rnd_ep[1])+1, repeat = true, interval = 0.1)
-  ╠═╡ =#
+# ╔═╡ 30870b6b-0c2f-481e-b1f6-0eebe6ddbdc4
+#update this to segment statistics by who started with the ball and also show draws for games that went over the limit
 
-# ╔═╡ 44027bb5-a9de-4448-8afc-a725b01557ca
-#this game can also be written as a tabular stochastic game where each state/joint-action pair can result in two outcomes with equal probability depending on which player is randomly selected to go first.  There are also cases when the order doesn't matter.  If I create a game like that, then I could try value iteration to solve it.
+# ╔═╡ e7cc25e9-b4fe-42a6-b07f-1940e7018068
+function test_soccer_policies(π1, π2; ntrials = 100_000, max_ep_length = 1_000)
+	data = 0:ntrials |> Map() do i
+		out = runepisode(soccer_game; πs = (π1, π2), max_steps = max_ep_length)
+		player1_ball = soccer_game.states[out[1][1]].agent1_ball
+		l = length(out[3])
+		(player1_ball, l, out[3][end], out[3][end] * 0.9f0^l)
+	end |> tcollect
+
+	player1_ball_inds = findall(a -> a[1], data)
+	player1_not_ball_inds = setdiff(eachindex(data), player1_ball_inds)
+
+	player1_balln = length(player1_ball_inds)
+	player1_not_balln = ntrials - player1_balln
+
+	function calc_stats(data)
+		n = length(data)
+		win_pct = sum(isone(a[3]) for a in data) / n
+		loss_pct = sum(a[3] == -1 for a in data) / n
+		draw_pct = sum(iszero(a[3]) for a in data) / n
+		avg_l = sum(a[2] for a in data) / n
+		avg_reward = sum(a[4] for a in data) / n
+	
+		(win_pct = win_pct, loss_pct = loss_pct, draw_pct = draw_pct, avg_steps = avg_l, avg_reward = avg_reward)
+	end
+
+	overall_stats = calc_stats(data)
+	ball_start_stats = calc_stats(view(data, player1_ball_inds))
+	noball_start_stats = calc_stats(view(data, player1_not_ball_inds))
+	
+	(overall_stats = overall_stats, ball_start_stats = ball_start_stats, noball_start_stats = noball_start_stats)
+end
 
 # ╔═╡ af9ba099-95b3-40cb-b1fe-b6091cbe7cd2
 md"""
@@ -170,23 +190,18 @@ begin
 	end
 end
 
-# ╔═╡ ad5613d9-4db4-44a3-98fe-fd0adeacac87
-#change this function to take the model with the above settings already baked in.  that way we only need to add the reward matrix constraint and then solve the updated model
+# ╔═╡ a01f5f05-788d-491e-9e2f-a047a11fbc03
+md"""
+### Minimax Games
+"""
 
-# ╔═╡ 393a2ab8-eda8-4197-a9b6-4f2e609dc936
-#need to change this solver to use the reward matrix of the opposing player instead of the main player since this is the proper wya for the linear program to work.  That way the player policy is based on minimizing the expected reward for the other player based on that players reward estimation
-
-# ╔═╡ ae3a776d-65a2-4797-935c-53e6c5bffa58
-0.9^14
-
-# ╔═╡ 2621b3be-cf6c-4431-8986-583446124fed
-const i_s0_soccer = soccer_game.initialize_state_index()
-
-# ╔═╡ 84f56ea1-9222-4fc2-a427-5c9b8b9468ed
-soccer_game.states[i_s0_soccer]
+# ╔═╡ fe077be2-467e-43a7-8729-3f3d48b8c91b
+md"""
+### Soccer Game Example
+"""
 
 # ╔═╡ 69ed465f-7d0b-480b-90a2-186f51258b38
-const soccer_random_policies = make_random_policies(soccer_game)
+const soccer_random_policy = make_random_policies(soccer_game)[1]
 
 # ╔═╡ bfd2d1a0-7b3e-4fbf-9a29-22de88bbc08d
 #compare solution states with different discount rates to see which states are affected by that
@@ -194,8 +209,72 @@ const soccer_random_policies = make_random_policies(soccer_game)
 #add value iteration for policy to train against one of these.  Need to create stochastic distribution MDP based on the other agent's policies
 #note that the non-game based algorithms cannot reproduce stochastic policies like what is needed for some of the game states
 
-# ╔═╡ 2a420894-33a5-401f-adf9-4253f648ae42
-soccer_game.agent_actions
+# ╔═╡ badfc16b-3b6e-471a-8e6e-d7ced4885770
+#likelihood to win depends on who starts with the ball.  the player with the ball wins about 2/3 of the time with most discount rates
+
+# ╔═╡ f31c6793-2bfb-4970-9b36-fbc95460be30
+md"""
+## Joint-Action Learning
+
+When we can only sample data from a game, we must rely on a method which uses sample averaging to calculate game values.  The solution concept is the same as that for value iteration but with updates occuring stochastially rather than with expected updates.
+"""
+
+# ╔═╡ f9ad0938-cfb7-4370-ba02-da9ed335a951
+#add some way to track changes to the value or policy function through steps
+
+# ╔═╡ 9e02a457-df78-4f3a-b3f1-8ab9da44c5d1
+#add to statistics to calculate the percent of games won/lost/draw when starting with the ball and not.  draw will be if max steps are reached without any result
+
+# ╔═╡ c4929e3a-c48f-4ba1-bf78-32f42fa7446d
+const soccer_iql = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 1_000_000, α_decay = 0.9999954f0, ϵ = 0.2f0)
+
+# ╔═╡ e6f529bf-c71e-431a-90ae-884d59d12132
+test_soccer_policies(soccer_iql.policies...)
+
+# ╔═╡ eda86d7a-87ca-4f07-9ca9-e9045906da92
+test_soccer_policies(soccer_iql.policies[1], soccer_random_policy)
+
+# ╔═╡ 879e7384-7786-43b2-a36f-229929e802cf
+#=╠═╡
+test_soccer_policies(soccer_iql.policies[1], soccer_jal.policies[2])
+  ╠═╡ =#
+
+# ╔═╡ 30ed524d-be39-41e2-adc4-86a3b155c3ed
+#=╠═╡
+test_soccer_policies(soccer_jal.policies[1], soccer_iql.policies[2])
+  ╠═╡ =#
+
+# ╔═╡ c3418786-fa47-4eb3-b239-3183ff920cc7
+const soccer_iql_vs_random = independent_q_learning(soccer_game, 0.9f0; α = 0.5f0, max_steps = 1_000_000, train_policies = 1:1, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
+
+# ╔═╡ 6143ba81-edfc-40dc-8380-515b73cca2b7
+#=╠═╡
+plot(soccer_iql_vs_random.reward_history |> cumsum |> v -> v ./ (1:length(v)))
+  ╠═╡ =#
+
+# ╔═╡ 91b0b90b-a1d7-42ac-a493-257dcc29bc6a
+test_soccer_policies(soccer_iql_vs_random.policies...)
+
+# ╔═╡ 32bc7859-7503-46c6-b8e0-2c3c22b2acc9
+#=╠═╡
+const soccer_iql_vs_jal = independent_q_learning(soccer_game, 0.9f0; α = 0.5f0, max_steps = 1_000_000, πs = (copy(soccer_random_policies[1]), soccer_jal.policies[2]), train_policies = 1:1, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
+  ╠═╡ =#
+
+# ╔═╡ 72097ef2-0fcb-45c8-8537-253af364e35a
+#=╠═╡
+test_soccer_policies(soccer_iql_vs_jal.policies...)
+  ╠═╡ =#
+
+# ╔═╡ 63af1889-a4a6-4d0e-a21f-21107c0efed2
+const soccer_iql_vs_iql = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 1_000_000, πs = (copy(soccer_random_policy), soccer_iql.policies[2]), train_policies = 1:1, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
+
+# ╔═╡ bd291ecb-f529-46da-8fab-ae172535afa9
+#=╠═╡
+plot(soccer_iql_vs_iql.reward_history |> cumsum |> v -> v ./ (1:length(v)))
+  ╠═╡ =#
+
+# ╔═╡ 7f486f74-6b68-4e03-9d09-858091d51784
+test_soccer_policies(soccer_iql_vs_iql.policies...)
 
 # ╔═╡ 5da718f5-c940-49a3-9c38-7af26a930439
 md"""
@@ -278,6 +357,12 @@ md"""
 ## Soccer Game
 """
 
+# ╔═╡ 322d6682-05db-41cc-b6d4-42d772b051ac
+plot_soccer_solution(episode_length::Integer, player1_wins::Bool, s::TwoPlayerSoccer.State{W, H, GH}, πs::Tuple{Matrix, Matrix}, value_functions::Tuple{Matrix, Matrix}) where {W, H, GH} = plot_soccer_solution(episode_length, player1_wins, s, πs, (maximum.(eachcol(value_functions[1])), maximum.(eachcol(value_functions[2]))))
+
+# ╔═╡ d056d56d-3c46-4d3d-8789-e1ad4aa41bf1
+plot_soccer_solution(episode_length::Integer, player1_wins::Bool, s::TwoPlayerSoccer.State{W, H, GH}, πs::Tuple{Matrix, Matrix}, value_function::Array) where {W, H, GH} = plot_soccer_solution(episode_length, player1_wins, s, πs, (value_function, -value_function))
+
 # ╔═╡ 7ab9b64b-6571-4cd4-bf9f-6ad00015dac8
 #=╠═╡
 function plot_soccer_state(s::TwoPlayerSoccer.State{W, H, GH}) where {W, H, GH}	
@@ -309,11 +394,6 @@ end
 plot_soccer_state(soccer_game.states[vcat(soccer_rnd_ep[1], soccer_rnd_ep[4])[ep_step]])
   ╠═╡ =#
 
-# ╔═╡ 7eb2de3f-6a7d-485b-a740-9da4cc03484d
-#=╠═╡
-plot_soccer_state(soccer_game.states[59])
-  ╠═╡ =#
-
 # ╔═╡ ab3793ad-1069-4b77-a95a-4474fcd7c662
 #=╠═╡
 function display_soccer_policy(v::AbstractVector{T}; scale = 1.0) where T<:Real
@@ -329,9 +409,9 @@ function display_soccer_policy(v::AbstractVector{T}; scale = 1.0) where T<:Real
 end
   ╠═╡ =#
 
-# ╔═╡ d056d56d-3c46-4d3d-8789-e1ad4aa41bf1
+# ╔═╡ e3cc189b-80a8-44a9-b734-59eece616647
 #=╠═╡
-function plot_soccer_solution(s::TwoPlayerSoccer.State{W, H, GH}, πs::Tuple{Matrix, Matrix}, value_function::Vector) where {W, H, GH}	
+function plot_soccer_solution(episode_length::Integer, player1_wins::Bool, s::TwoPlayerSoccer.State{W, H, GH}, πs::Tuple{Matrix, Matrix}, value_functions::Tuple{Vector, Vector}) where {W, H, GH}	
 	state_plot = plot_soccer_state(s)
 	i_s = soccer_game.state_index[s]
 	v1 = πs[1][:, i_s]
@@ -339,15 +419,18 @@ function plot_soccer_solution(s::TwoPlayerSoccer.State{W, H, GH}, πs::Tuple{Mat
 	π1_disp = display_soccer_policy(v1)
 	π2_disp = display_soccer_policy(v2)
 
+	winner_name = player1_wins ? "A" : "B"
+
 	@htl("""
 	<div style = "width: 600px;">
+		 $episode_length step game won by $winner_name
 		<div style = "display: flex; justify-content: space-around; background-color: white; color: black;">
 		 <div>
-		  Player 1 Value/Policy: $(value_function[i_s])
+		  Player 1 Value/Policy: $(value_functions[1][i_s])
 		 $π1_disp
 		 </div>
 		 <div>
-		  Player 2 Value/Policy: $(-value_function[i_s])
+		  Player 2 Value/Policy: $(value_functions[2][i_s])
 		 $π2_disp
 		 </div>
 		 </div>
@@ -355,6 +438,100 @@ function plot_soccer_solution(s::TwoPlayerSoccer.State{W, H, GH}, πs::Tuple{Mat
 	</div>
 		 """)
 end
+  ╠═╡ =#
+
+# ╔═╡ bf9e5075-3595-42ca-9b73-0e16e608b946
+#=╠═╡
+function plot_soccer_solution(episode_length::Integer, player1_wins::Bool, s::TwoPlayerSoccer.State{W, H, GH}, πs::Tuple{Matrix, Matrix}) where {W, H, GH}	
+	state_plot = plot_soccer_state(s)
+	i_s = soccer_game.state_index[s]
+	v1 = πs[1][:, i_s]
+	v2 = πs[2][:, i_s]
+	π1_disp = display_soccer_policy(v1)
+	π2_disp = display_soccer_policy(v2)
+
+	winner_name = player1_wins ? "A" : "B"
+
+	@htl("""
+	<div style = "width: 600px;">
+		  $episode_length step game won by $winner_name
+		<div style = "display: flex; justify-content: space-around; background-color: white; color: black;">
+		
+		 <div>
+		  Player 1 Policy
+		 $π1_disp
+		 </div>
+		 <div>
+		  Player 2 Policy
+		 $π2_disp
+		 </div>
+		 </div>
+		 $state_plot
+	</div>
+		 """)
+end
+  ╠═╡ =#
+
+# ╔═╡ ee51c98e-444e-4a44-bb67-ea91f739d731
+#=╠═╡
+function create_soccer_visualization(π1, π2, vs...)
+	ep = runepisode(soccer_game; πs = (π1, π2), max_steps = 1_000)
+	el = Slider(1:length(ep[1])+1; show_value=true)
+
+	function f(ep_step) 
+		soccer_state_index = vcat(ep[1], ep[4])[ep_step]
+		s = soccer_game.states[soccer_state_index]
+		plot_soccer_solution(length(ep[1]), isone(ep[3][end]), s, (π1, π2), vs...)
+	end
+
+	return (slider = el, plot_function = f)
+end
+  ╠═╡ =#
+
+# ╔═╡ feb35b37-c99f-40b7-b181-a86038a8ed92
+#=╠═╡
+iql_viz = create_soccer_visualization(soccer_iql.policies..., soccer_iql.value_estimates)
+  ╠═╡ =#
+
+# ╔═╡ f3566f79-350b-40ad-9817-af038202fd11
+#=╠═╡
+@bind iql_step iql_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ 03178016-9014-45a8-a977-1e3c794d3db6
+#=╠═╡
+iql_viz.plot_function(iql_step)
+  ╠═╡ =#
+
+# ╔═╡ 50a06568-bd54-4f0c-82a1-532050980940
+#=╠═╡
+iql_vs_random_viz = create_soccer_visualization(soccer_iql_vs_random.policies...)
+  ╠═╡ =#
+
+# ╔═╡ 97e10e56-9990-4b53-bf01-109eda72bb1c
+#=╠═╡
+@bind iql_vs_random_step iql_vs_random_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ d5351789-cd1a-4b20-9e96-8f3810b811f1
+#=╠═╡
+iql_vs_random_viz.plot_function(iql_vs_random_step)
+  ╠═╡ =#
+
+# ╔═╡ cd3bb7ba-3560-40a9-b166-7cb5cb23f316
+# ╠═╡ disabled = true
+#=╠═╡
+iql_vs_iql_viz = create_soccer_visualization(soccer_iql_vs_iql.policies..., soccer_iql_vs_iql.value_estimates)
+  ╠═╡ =#
+
+# ╔═╡ 5cfcb48f-59af-435c-81ea-170eb8a94c78
+#=╠═╡
+@bind iql_vs_iql_step iql_vs_iql_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ bf7a9be7-5e04-4059-b67e-01b30f929036
+#=╠═╡
+iql_vs_iql_viz.plot_function(iql_vs_iql_step)
   ╠═╡ =#
 
 # ╔═╡ 9d54ee68-d60c-11f0-87d1-3be62822741b
@@ -426,7 +603,7 @@ begin
 		if all(x -> isapprox(x, reward_matrix[1]), reward_matrix) 
 			p = one(T) / x_length
 			@inbounds @simd for i in 1:x_length
-				π[i, i_s] = p
+				π[i, i_s] = max(zero(T), p)
 			end
 			return -reward_matrix[1]
 		end
@@ -442,7 +619,7 @@ begin
 		optimize!(model)
 		modified_game_value = inv(sum(value.(x)))
 		@inbounds @simd for i in 1:x_length
-			π[i, i_s] = value(x[i]) * modified_game_value
+			π[i, i_s] = max(zero(T), value(x[i]) * modified_game_value)
 		end
 
 		for c in con_s
@@ -458,8 +635,6 @@ end
 function value_iteration_game!(v_est::Vector{T}, πs::NTuple{2, Matrix{T}}, m_est::Array{T, 3}, ptf::TabularZeroSumGameTransition{T, ST, RT}, γ::T, nmax::Integer; show_message::Bool = true, θ::T = eps(zero(T))) where {T<:Real, ST, RT}
 	(l, k, num_states) = size(m_est)
 	reward_matrix = zeros(T, l, k)
-	π1 = zeros(T, l, num_states)
-	π2 = zeros(T, k, num_states)
 
 	delta_max = typemax(T)
 	sweep = 0
@@ -499,7 +674,7 @@ function value_iteration_game!(v_est::Vector{T}, πs::NTuple{2, Matrix{T}}, m_es
 			v_old = v_est[i_s]
 			v_est[i_s] = solve_minimax_game!(reward_matrix, πs[1], model1, x, m_est, i_s, true)
 			
-			delta_max = max(abs(v_old - v_est[i_s]), delta_max)
+			delta_max = max(TabularRL.calc_pct_change(v_old, v_est[i_s]), delta_max)
 		end
 		sweep += 1
 		show_message && @info "After $(sweep) sweeps, maximum value change is $delta_max"
@@ -520,52 +695,174 @@ begin
 end
 
 # ╔═╡ 439fff54-57e8-409e-994e-55e536d2ea0b
-const soccer_value_iter = value_iteration_game(soccer_game, 0.9f0; θ = 1f-3)
-
-# ╔═╡ 3d9d265a-35d3-4f23-adbc-99f32d19350e
-filter(a -> maximum(a) != 1, eachcol(soccer_value_iter.final_policies[1]))
-
-# ╔═╡ d9286880-143e-43e3-bff4-4e33cc3c10bd
-soccer_value_iter.final_values[i_s0_soccer]
-
-# ╔═╡ fd270bad-7ccd-46e0-ac22-30c6a3ae925f
-const soccer_ideal_ep = runepisode(soccer_game; πs = (soccer_value_iter.final_policies[1], soccer_value_iter.final_policies[2]), max_steps = 10_000)
-
-# ╔═╡ f6a1e935-52c3-4f8d-83a9-9a82850b38f9
-#=╠═╡
-@bind ep_step_ideal Slider(1:length(soccer_ideal_ep[1])+1)
-  ╠═╡ =#
-
-# ╔═╡ 4413ba09-3dbc-4e87-9adf-d9e62efa4aac
-#=╠═╡
-soccer_state_index = vcat(soccer_ideal_ep[1], soccer_ideal_ep[4])[ep_step_ideal]
-  ╠═╡ =#
-
-# ╔═╡ 2276c50d-b556-495c-9b0b-efc19b8f2a99
-#=╠═╡
-soccer_value_iter.final_policies[1][:, soccer_state_index]
-  ╠═╡ =#
-
-# ╔═╡ 1e13f0be-7b17-40e9-81e1-1b176869f175
-#=╠═╡
-plot_soccer_solution(soccer_game.states[soccer_state_index], soccer_value_iter.final_policies, soccer_value_iter.final_values)
-  ╠═╡ =#
-
-# ╔═╡ f0b2edf8-ba0a-464e-bc78-4035728b7c54
-0:10000 |> Map(i -> runepisode(soccer_game; πs = (soccer_random_policies[2], soccer_value_iter.final_policies[2] .+ eps(1f0)), max_steps = 10000)[3][end]) |> foldxt(+) |> x -> x / 10000
-
-# ╔═╡ 0f1dcee0-3e52-43d4-a79e-b76e81e7cc30
-0:10000 |> Map(i -> runepisode(soccer_game; πs = (soccer_random_policies[2], soccer_value_iter.final_policies[2] .+ eps(1f0)), max_steps = 10000)[3] |> length) |> foldxt(+) |> x -> x / 10000
-
-# ╔═╡ 93924c93-e859-471d-8505-f7213b1ef5f6
-#=╠═╡
-plot_soccer_solution(soccer_game.states[1], soccer_value_iter.final_policies, soccer_value_iter.final_values)
-  ╠═╡ =#
-
-# ╔═╡ 19b92b1c-df1f-43b6-9504-cfbfc6524465
 # ╠═╡ show_logs = false
+const soccer_value_iter = value_iteration_game(soccer_game, 0.9f0; θ = 1f-5)
+
+# ╔═╡ 74d539f4-defc-4e5e-a085-a30e96df75bf
 #=╠═╡
-@plutoprofview value_iteration_game(soccer_game, 0.9f0; θ = 1f-3)
+const soccer_ideal_viz = create_soccer_visualization(soccer_value_iter.final_policies..., soccer_value_iter.final_values)
+  ╠═╡ =#
+
+# ╔═╡ 036e8dbe-9acb-41bd-83eb-957da19fd86d
+#=╠═╡
+@bind soccer_ideal_step soccer_ideal_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ 37c4bbe2-f78e-4ad1-a0fb-a00da11631f1
+#=╠═╡
+soccer_ideal_viz.plot_function(soccer_ideal_step)
+  ╠═╡ =#
+
+# ╔═╡ 84fdc00e-43d1-44c4-b479-d7be79c2d4cd
+test_soccer_policies(soccer_random_policy, soccer_value_iter.final_policies[2])
+
+# ╔═╡ 19d9e4b3-2c6b-4f33-a5be-32aa4a38513a
+test_soccer_policies(soccer_value_iter.final_policies[1], soccer_random_policy)
+
+# ╔═╡ 0fc4963b-2100-4b5d-a663-1c5306f311ca
+test_soccer_policies(soccer_iql.policies[1], soccer_value_iter.final_policies[2])
+
+# ╔═╡ 140a1608-8105-4d9c-a839-12e94483eab4
+const soccer_iql_vs_minimax = independent_q_learning(soccer_game, 0.9f0; α = 0.5f0, max_steps = 1_000_000, πs = (copy(soccer_random_policy), soccer_value_iter.final_policies[2]), train_policies = 1:1, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
+
+# ╔═╡ d3a1b675-a218-4543-a501-df25b7255762
+#=╠═╡
+plot(soccer_iql_vs_minimax.reward_history |> cumsum |> v -> v ./ (1:length(v)))
+  ╠═╡ =#
+
+# ╔═╡ d6dc4e3c-faa7-426c-972e-dacf9bf6ba88
+#=╠═╡
+iql_vs_minimax_viz = create_soccer_visualization(soccer_iql_vs_minimax.policies..., soccer_iql_vs_minimax.value_estimates)
+  ╠═╡ =#
+
+# ╔═╡ e071b761-5df2-4776-a959-2b8546027cd6
+#=╠═╡
+@bind iql_vs_minimax_step iql_vs_minimax_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ b1f4df52-2049-43e6-bc46-fe7e192e74ca
+#=╠═╡
+iql_vs_minimax_viz.plot_function(iql_vs_minimax_step)
+  ╠═╡ =#
+
+# ╔═╡ 4b940a7f-21aa-44f3-9ecf-03e3ab0c2900
+test_soccer_policies(soccer_iql_vs_minimax.policies[1], soccer_value_iter.final_policies[2])
+
+# ╔═╡ a1407418-2efb-4bee-9645-d029735d99f7
+#=╠═╡
+viz_test = create_soccer_visualization(soccer_value_iter.final_policies..., soccer_value_iter.final_values)
+  ╠═╡ =#
+
+# ╔═╡ 78815d3e-b1fa-4a60-b86d-07a5e40fea60
+#=╠═╡
+@bind test_step viz_test.slider
+  ╠═╡ =#
+
+# ╔═╡ 511e384b-697e-4397-8ec5-bf5449b9eee5
+#=╠═╡
+viz_test.plot_function(test_step)
+  ╠═╡ =#
+
+# ╔═╡ 95a3fcca-1f0c-49e9-9e9c-b1bea8cb76c4
+#joint action learning with game theory
+function jal_gt!(q_est::Array{T, 3}, πs::NTuple{2, Matrix{T}}, game::TabularStochasticGame{T, S, A, 2, P, F}, γ::T, max_episodes::Integer, max_steps::Integer; α::T = one(T) / 10, ϵ::T = one(T) / 10, α_decay::T = one(T)) where {T<:Real, S, A, P<:AbstractTabularZeroSumGameTransition{T}, F<:Function}
+	ep = 1
+	step = 1
+	i_s = game.initialize_state_index()
+	a = [0, 0]
+	(l, k, num_states) = size(q_est)
+	reward_matrix = zeros(T, l, k)
+
+	model1 = Model(HiGHS.Optimizer)
+	model2 = Model(HiGHS.Optimizer)
+
+	@variable(model1, x[1:l])
+	@constraint(model1, x .>= zero(T))
+	@objective(model1, Max, sum(x))
+
+	@variable(model2, y[1:k])
+	@constraint(model2, y .>= zero(T))
+	@objective(model2, Max, sum(y))
+
+	α_step = α
+	
+	while (ep <= max_episodes) && (step <= max_steps)
+		if rand() < ϵ
+			a[1] = rand(eachindex(game.agent_actions[1]))
+		else
+			# solve_minimax_game!(reward_matrix, πs[1], model1, x, q_est, i_s, true)
+			a[1] = sample_action(πs[1], i_s)
+		end
+
+		if rand() < ϵ
+			a[2] = rand(eachindex(game.agent_actions[2]))
+		else
+			solve_minimax_game!(reward_matrix, πs[2], model2, y, q_est, i_s, false)
+			a[2] = sample_action(πs[2], i_s)
+		end
+
+		(r, i_s′) = game.ptf(i_s, Tuple(a))
+
+		if game.terminal_states[i_s′]
+			game_state_value = zero(T)
+			i_s′ = game.initialize_state_index()
+			solve_minimax_game!(reward_matrix, πs[1], model1, x, q_est, i_s′, true)
+			ep += 1
+		else
+			game_state_value = solve_minimax_game!(reward_matrix, πs[1], model1, x, q_est, i_s′, true)
+		end
+		q_est[a[1], a[2], i_s] += α_step * (r + γ*game_state_value - q_est[a[1], a[2], i_s])
+
+		i_s = i_s′
+		step += 1
+		α_step *= α_decay
+	end
+
+	for i_s in eachindex(game.states)
+		solve_minimax_game!(reward_matrix, πs[1], model1, x, q_est, i_s, true)
+		solve_minimax_game!(reward_matrix, πs[2], model2, y, q_est, i_s, false)
+	end
+	
+	return (joint_action_values = q_est, policies = πs)
+end	
+
+# ╔═╡ b0ef6a1d-cb67-44a3-b8da-4f56930f85d7
+begin
+	jal_gt(game::TabularStochasticGame{T, S, A, 2, P, F}, γ::T, max_episodes::Integer, max_steps::Integer; init_value::T = zero(T), q_est::Array{T, 3} = ones(T, length(game.agent_actions[1]), length(game.agent_actions[2]), length(game.states)) .* init_value, πs::NTuple{2, Matrix{T}} = make_random_policies(game), kwargs...) where {T<:Real, S, A, P<:AbstractTabularZeroSumGameTransition{T}, F<:Function} = 
+	jal_gt!(q_est, πs, game, γ, max_episodes, max_steps; kwargs...)
+end
+
+# ╔═╡ e12a9ce4-1441-4863-9e31-19d04f512c61
+# ╠═╡ show_logs = false
+const soccer_jal = jal_gt(soccer_game, 0.9f0, typemax(Int64), 100_000; α = .5f0, ϵ = 0.2f0, α_decay = 0.9999954f0)
+
+# ╔═╡ a86d8b48-6619-4f92-aa17-17e3c4a5f4f7
+test_soccer_policies(soccer_jal.policies[1], soccer_value_iter.final_policies[2])
+
+# ╔═╡ 1eaed379-6f4d-4634-aea6-a5b1941389d4
+test_soccer_policies(soccer_jal.policies[1], soccer_random_policy)
+
+# ╔═╡ 41b36c98-09a9-4951-a587-9d9e982559be
+test_soccer_policies(soccer_random_policy, soccer_jal.policies[2])
+
+# ╔═╡ 46060259-a774-4ff1-b415-27a5c6e9fa40
+#=╠═╡
+jal_viz = create_soccer_visualization(soccer_jal.policies[1], soccer_random_policy, soccer_value_iter.final_values)
+  ╠═╡ =#
+
+# ╔═╡ 59461d31-4d11-4802-8e58-996a0fa7bf67
+#=╠═╡
+@bind jal_step jal_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ 0bb09a54-4d4b-472d-86cc-133a9d73349c
+#=╠═╡
+jal_viz.plot_function(jal_step)
+  ╠═╡ =#
+
+# ╔═╡ 91a4a1c8-4006-4c63-8cc1-bf665d0946ce
+#=╠═╡
+@plutoprofview jal_gt(soccer_game, 0.9f0, typemax(Int64), 10_000; α = 0.2f0, ϵ = 0.2f0)
   ╠═╡ =#
 
 # ╔═╡ 0de23d03-fc68-4b8b-9d0a-468e40ceee9a
@@ -1422,52 +1719,90 @@ version = "17.7.0+0"
 
 # ╔═╡ Cell order:
 # ╟─c62ca696-4fbe-42e2-ab00-4a916f9fac8d
-# ╟─393419ba-28fb-417e-ab2a-fafe857d0814
-# ╠═6eebd434-1520-4885-a5ca-139fc916bd7a
 # ╠═844c29f5-fe4d-49cc-9dab-4b0ed6256a85
+# ╟─798386fc-f572-4cff-9222-00ab3452faae
 # ╠═3120f952-d848-4f37-b20c-922b5e897587
 # ╠═641255f6-19d8-401d-b522-7cf22577d87d
 # ╟─c3e5baea-2b49-4084-83c2-ec0a9402d297
-# ╟─48df4121-7e87-4514-b852-ec1c00e7a232
-# ╠═a5901beb-eac1-4056-b0e0-1add182b061d
-# ╠═44027bb5-a9de-4448-8afc-a725b01557ca
+# ╟─a5901beb-eac1-4056-b0e0-1add182b061d
+# ╠═30870b6b-0c2f-481e-b1f6-0eebe6ddbdc4
+# ╠═e7cc25e9-b4fe-42a6-b07f-1940e7018068
 # ╟─af9ba099-95b3-40cb-b1fe-b6091cbe7cd2
 # ╟─bd7ce958-162b-419f-a177-6d1b21905e1c
 # ╠═e527160e-6d64-48d2-ab4d-abc67afebb97
 # ╠═9171a928-3c5a-4e3d-b758-89d060e4d26d
 # ╠═b53482aa-aa48-4846-ba9b-a9f7c2279fcd
 # ╠═54db08a2-b7c5-4311-8bca-fce64d665563
-# ╠═ad5613d9-4db4-44a3-98fe-fd0adeacac87
-# ╠═393a2ab8-eda8-4197-a9b6-4f2e609dc936
+# ╟─a01f5f05-788d-491e-9e2f-a047a11fbc03
 # ╠═7b07aa13-b39a-4874-9de4-037685001e24
 # ╠═2eb915ed-16c2-4ea0-bf5f-5d1456249224
 # ╠═af0265b8-7fe9-499a-b675-32bf5ba76f64
-# ╠═439fff54-57e8-409e-994e-55e536d2ea0b
-# ╠═3d9d265a-35d3-4f23-adbc-99f32d19350e
-# ╠═19b92b1c-df1f-43b6-9504-cfbfc6524465
-# ╠═ae3a776d-65a2-4797-935c-53e6c5bffa58
-# ╠═2621b3be-cf6c-4431-8986-583446124fed
-# ╠═84f56ea1-9222-4fc2-a427-5c9b8b9468ed
-# ╠═d9286880-143e-43e3-bff4-4e33cc3c10bd
+# ╟─fe077be2-467e-43a7-8729-3f3d48b8c91b
 # ╠═69ed465f-7d0b-480b-90a2-186f51258b38
-# ╠═fd270bad-7ccd-46e0-ac22-30c6a3ae925f
+# ╠═439fff54-57e8-409e-994e-55e536d2ea0b
+# ╠═74d539f4-defc-4e5e-a085-a30e96df75bf
+# ╟─036e8dbe-9acb-41bd-83eb-957da19fd86d
+# ╟─37c4bbe2-f78e-4ad1-a0fb-a00da11631f1
 # ╠═bfd2d1a0-7b3e-4fbf-9a29-22de88bbc08d
-# ╟─f6a1e935-52c3-4f8d-83a9-9a82850b38f9
-# ╠═2276c50d-b556-495c-9b0b-efc19b8f2a99
-# ╠═1e13f0be-7b17-40e9-81e1-1b176869f175
-# ╠═2a420894-33a5-401f-adf9-4253f648ae42
-# ╠═4413ba09-3dbc-4e87-9adf-d9e62efa4aac
-# ╠═f0b2edf8-ba0a-464e-bc78-4035728b7c54
-# ╠═0f1dcee0-3e52-43d4-a79e-b76e81e7cc30
-# ╠═7eb2de3f-6a7d-485b-a740-9da4cc03484d
+# ╠═badfc16b-3b6e-471a-8e6e-d7ced4885770
+# ╠═84fdc00e-43d1-44c4-b479-d7be79c2d4cd
+# ╠═19d9e4b3-2c6b-4f33-a5be-32aa4a38513a
+# ╟─f31c6793-2bfb-4970-9b36-fbc95460be30
+# ╠═f9ad0938-cfb7-4370-ba02-da9ed335a951
+# ╠═95a3fcca-1f0c-49e9-9e9c-b1bea8cb76c4
+# ╠═b0ef6a1d-cb67-44a3-b8da-4f56930f85d7
+# ╠═9e02a457-df78-4f3a-b3f1-8ab9da44c5d1
+# ╠═e12a9ce4-1441-4863-9e31-19d04f512c61
+# ╠═91a4a1c8-4006-4c63-8cc1-bf665d0946ce
+# ╠═a86d8b48-6619-4f92-aa17-17e3c4a5f4f7
+# ╠═1eaed379-6f4d-4634-aea6-a5b1941389d4
+# ╠═41b36c98-09a9-4951-a587-9d9e982559be
+# ╠═46060259-a774-4ff1-b415-27a5c6e9fa40
+# ╟─59461d31-4d11-4802-8e58-996a0fa7bf67
+# ╠═0bb09a54-4d4b-472d-86cc-133a9d73349c
+# ╠═c4929e3a-c48f-4ba1-bf78-32f42fa7446d
+# ╠═feb35b37-c99f-40b7-b181-a86038a8ed92
+# ╟─f3566f79-350b-40ad-9817-af038202fd11
+# ╠═03178016-9014-45a8-a977-1e3c794d3db6
+# ╠═e6f529bf-c71e-431a-90ae-884d59d12132
+# ╠═eda86d7a-87ca-4f07-9ca9-e9045906da92
+# ╠═0fc4963b-2100-4b5d-a663-1c5306f311ca
+# ╠═879e7384-7786-43b2-a36f-229929e802cf
+# ╠═30ed524d-be39-41e2-adc4-86a3b155c3ed
+# ╠═140a1608-8105-4d9c-a839-12e94483eab4
+# ╠═d3a1b675-a218-4543-a501-df25b7255762
+# ╠═d6dc4e3c-faa7-426c-972e-dacf9bf6ba88
+# ╟─e071b761-5df2-4776-a959-2b8546027cd6
+# ╠═b1f4df52-2049-43e6-bc46-fe7e192e74ca
+# ╠═4b940a7f-21aa-44f3-9ecf-03e3ab0c2900
+# ╠═c3418786-fa47-4eb3-b239-3183ff920cc7
+# ╠═6143ba81-edfc-40dc-8380-515b73cca2b7
+# ╠═91b0b90b-a1d7-42ac-a493-257dcc29bc6a
+# ╠═50a06568-bd54-4f0c-82a1-532050980940
+# ╟─97e10e56-9990-4b53-bf01-109eda72bb1c
+# ╠═d5351789-cd1a-4b20-9e96-8f3810b811f1
+# ╠═32bc7859-7503-46c6-b8e0-2c3c22b2acc9
+# ╠═72097ef2-0fcb-45c8-8537-253af364e35a
+# ╠═63af1889-a4a6-4d0e-a21f-21107c0efed2
+# ╟─bd291ecb-f529-46da-8fab-ae172535afa9
+# ╠═cd3bb7ba-3560-40a9-b166-7cb5cb23f316
+# ╠═5cfcb48f-59af-435c-81ea-170eb8a94c78
+# ╠═bf7a9be7-5e04-4059-b67e-01b30f929036
+# ╠═7f486f74-6b68-4e03-9d09-858091d51784
 # ╟─5da718f5-c940-49a3-9c38-7af26a930439
 # ╟─52a51c78-4438-44b2-8315-9cffd8ba2581
 # ╠═b053dc54-af90-463e-8510-38c33be32312
 # ╠═f338dda8-79b1-4c54-90ee-400e29b9d0b0
 # ╠═065ba539-ac92-4117-a1a3-d44d21237e34
 # ╟─697e2312-c9a6-47b3-b13c-277ad4b0efb2
-# ╠═93924c93-e859-471d-8505-f7213b1ef5f6
+# ╠═a1407418-2efb-4bee-9645-d029735d99f7
+# ╟─78815d3e-b1fa-4a60-b86d-07a5e40fea60
+# ╟─511e384b-697e-4397-8ec5-bf5449b9eee5
+# ╠═ee51c98e-444e-4a44-bb67-ea91f739d731
+# ╠═e3cc189b-80a8-44a9-b734-59eece616647
+# ╠═322d6682-05db-41cc-b6d4-42d772b051ac
 # ╠═d056d56d-3c46-4d3d-8789-e1ad4aa41bf1
+# ╠═bf9e5075-3595-42ca-9b73-0e16e608b946
 # ╠═7ab9b64b-6571-4cd4-bf9f-6ad00015dac8
 # ╠═ab3793ad-1069-4b77-a95a-4474fcd7c662
 # ╟─9d54ee68-d60c-11f0-87d1-3be62822741b
