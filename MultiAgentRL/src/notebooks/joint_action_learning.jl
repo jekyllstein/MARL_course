@@ -97,21 +97,43 @@ end
 # ╔═╡ 798386fc-f572-4cff-9222-00ab3452faae
 md"""
 ## Soccer Game Example
+
+Stochastic game which is mostly deterministic.  For a given action selection, each transition has two possible outcomes depending on which player goes first.  For transitions in which there is no possibility of collision, only one outcome is possible.  The visualization below shows an episode run using two random policies.
 """
 
 # ╔═╡ 3120f952-d848-4f37-b20c-922b5e897587
 const soccer_game = TwoPlayerSoccer.make_distribution_environment()
 
-# ╔═╡ 641255f6-19d8-401d-b522-7cf22577d87d
-const soccer_rnd_ep = runepisode(soccer_game; max_steps = 1000)
+# ╔═╡ 69ed465f-7d0b-480b-90a2-186f51258b38
+const soccer_random_policy = make_random_policies(soccer_game)[1]
 
-# ╔═╡ c3e5baea-2b49-4084-83c2-ec0a9402d297
-#=╠═╡
-@bind ep_step Slider(1:length(soccer_rnd_ep[1])+1; show_value=true)
-  ╠═╡ =#
+# ╔═╡ 96b067f8-5e7e-459a-9e3f-5640aa18680b
+md"""
+### Soccer Visulization with Random Policies
+"""
 
-# ╔═╡ 30870b6b-0c2f-481e-b1f6-0eebe6ddbdc4
-#update this to segment statistics by who started with the ball and also show draws for games that went over the limit
+# ╔═╡ 164251a2-a42c-45d7-839f-bf06d082a971
+md"""
+### Soccer Game Statistics of Random Policies
+"""
+
+# ╔═╡ bd5e2748-4a79-4fab-8019-f6a733c9a653
+md"""
+With two random policies we'd expect the win percentage to be 50%, but we can see from the statistics that starting with the ball produces an advantage of about 10% and games last an average of 100 steps.
+"""
+
+# ╔═╡ 1ed1be16-d0d0-446f-b096-5cc5e48e2ab5
+function display_soccer_statistics(results::NamedTuple, name1::AbstractString, name2::AbstractString)
+f(x) = round(Float64(x); sigdigits = 3)
+
+md"""
+|$name1 vs $name2|Win %|Loss %|Draw %|Avg Steps|Avg Discounted Reward|
+|---|---|---|---|---|---|
+|Overall|$(f(results.overall_stats.win_pct))|$(f(results.overall_stats.loss_pct))|$(f(results.overall_stats.draw_pct))|$(f(results.overall_stats.avg_steps))|$(f(results.overall_stats.avg_reward))|
+|Start with Ball|$(f(results.ball_start_stats.win_pct))|$(f(results.ball_start_stats.loss_pct))|$(f(results.ball_start_stats.draw_pct))|$(f(results.ball_start_stats.avg_steps))|$(f(results.ball_start_stats.avg_reward))|
+|Start without Ball|$(f(results.noball_start_stats.win_pct))|$(f(results.noball_start_stats.loss_pct))|$(f(results.noball_start_stats.draw_pct))|$(f(results.noball_start_stats.avg_steps))|$(f(results.noball_start_stats.avg_reward))|
+"""
+end
 
 # ╔═╡ e7cc25e9-b4fe-42a6-b07f-1940e7018068
 function test_soccer_policies(π1, π2; ntrials = 100_000, max_ep_length = 1_000)
@@ -146,6 +168,15 @@ function test_soccer_policies(π1, π2; ntrials = 100_000, max_ep_length = 1_000
 	(overall_stats = overall_stats, ball_start_stats = ball_start_stats, noball_start_stats = noball_start_stats)
 end
 
+# ╔═╡ fe4bd7bf-a73b-401c-8682-dc734122f5e8
+function display_soccer_statistics(π1, π2, name1::AbstractString, name2::AbstractString; kwargs...)
+	results = test_soccer_policies(π1, π2; kwargs...)
+	display_soccer_statistics(results, name1, name2)
+end
+
+# ╔═╡ 939f23a4-d089-49ab-807c-ac107c3664d4
+display_soccer_statistics(soccer_random_policy, soccer_random_policy, "Random", "Random"; max_ep_length = 10_000)
+
 # ╔═╡ af9ba099-95b3-40cb-b1fe-b6091cbe7cd2
 md"""
 # Solution Methods
@@ -156,14 +187,19 @@ md"""
 ## Value Iteration for Stochastic Games
 """
 
+# ╔═╡ a01f5f05-788d-491e-9e2f-a047a11fbc03
+md"""
+### Minimax Solution
+
+For two-player zero-sum games, there is a unique minimax solution that depends on the reward values for each joint action.  The function calculates the value and solution from the perspective of either the first or second player.
+"""
+
 # ╔═╡ e527160e-6d64-48d2-ab4d-abc67afebb97
-#implement algorithm 6 from the book here.  The "value" calculation can be specialized to situations depending on the game transition type.  For the soccer game I need to focus on the minimax solution type which only works for a two player zero sum game
+md"""
+### Bellman Value Iteration for Zero-Sum Games
 
-# ╔═╡ 9171a928-3c5a-4e3d-b758-89d060e4d26d
-#I also want to create utilities to convert the game into an MDP from the perspective of one of the agents using some fixed policy for the other agents.
-
-# ╔═╡ b53482aa-aa48-4846-ba9b-a9f7c2279fcd
-#add version of bellman game reward function that works with non-deterministic game states like I intend to have for the soccer game
+Bellman style recursive reward calculation for zero sum games.  These games only require a single reward value for both players since ``r_x \doteq -r_y`` for all circumstances.  The value is calculated from the perspective of the first player by convention.  Below are implementations that cover deterministic and stochastic zero-sum games.
+"""
 
 # ╔═╡ 54db08a2-b7c5-4311-8bca-fce64d665563
 begin
@@ -190,18 +226,15 @@ begin
 	end
 end
 
-# ╔═╡ a01f5f05-788d-491e-9e2f-a047a11fbc03
-md"""
-### Minimax Games
-"""
-
 # ╔═╡ fe077be2-467e-43a7-8729-3f3d48b8c91b
 md"""
 ### Soccer Game Example
 """
 
-# ╔═╡ 69ed465f-7d0b-480b-90a2-186f51258b38
-const soccer_random_policy = make_random_policies(soccer_game)[1]
+# ╔═╡ 9a615e94-6be8-47f5-aa38-91088f3accc3
+md"""
+#### Minimax vs Minimax
+"""
 
 # ╔═╡ bfd2d1a0-7b3e-4fbf-9a29-22de88bbc08d
 #compare solution states with different discount rates to see which states are affected by that
@@ -212,6 +245,11 @@ const soccer_random_policy = make_random_policies(soccer_game)[1]
 # ╔═╡ badfc16b-3b6e-471a-8e6e-d7ced4885770
 #likelihood to win depends on who starts with the ball.  the player with the ball wins about 2/3 of the time with most discount rates
 
+# ╔═╡ 09e01730-c983-48bf-9e7a-a3d2ccc0a631
+md"""
+#### Minimax vs Random
+"""
+
 # ╔═╡ f31c6793-2bfb-4970-9b36-fbc95460be30
 md"""
 ## Joint-Action Learning
@@ -219,62 +257,101 @@ md"""
 When we can only sample data from a game, we must rely on a method which uses sample averaging to calculate game values.  The solution concept is the same as that for value iteration but with updates occuring stochastially rather than with expected updates.
 """
 
-# ╔═╡ f9ad0938-cfb7-4370-ba02-da9ed335a951
-#add some way to track changes to the value or policy function through steps
+# ╔═╡ 2d8f6a70-1f8e-4ad6-a616-e725b5c0a377
+md"""
+### Soccer Game Example
+"""
 
-# ╔═╡ 9e02a457-df78-4f3a-b3f1-8ab9da44c5d1
-#add to statistics to calculate the percent of games won/lost/draw when starting with the ball and not.  draw will be if max steps are reached without any result
+# ╔═╡ 9ea31e89-6279-456d-be11-e915686e0be4
+md"""
+#### Minimax Q vs Minimax Q
+"""
+
+# ╔═╡ 3ec640b5-9c7a-4973-b128-ec438d45f5b7
+md"""
+The lower table on the right represents the estimated game values compared to the exact values shown above.  During an episode we can see states where the true minimax policy does not match the one learned by joint-action learning.
+"""
+
+# ╔═╡ efcc1361-774a-4245-b034-090dc29ae131
+md"""
+#### Minimax Q vs Random
+"""
+
+# ╔═╡ b2872d0f-f780-449a-b17d-72d1506f90c0
+md"""
+#### Random Performance vs True Minimax
+
+Comparing the two policies we can see a higher reward value and higher winrate for the true solution compared to the estimated one.
+"""
+
+# ╔═╡ bbdece04-95cd-4333-8244-eaf6f0be4b18
+md"""
+#### Minimax Q vs Minimax
+"""
+
+# ╔═╡ dfd93d6c-da3a-4f02-b8a4-6ebec3dc8284
+md"""
+Player A follows the estimated minimax solution against Player B with the exact minimax solution
+"""
+
+# ╔═╡ 989c2b5b-1d33-4292-b372-6c9a1f13be20
+md"""
+## Independent Q-Learning
+
+This method does not learn joint-action values and is an example of a single-agent RL reduction from the previous chapter.  Each agent attempts to maximize its own performance based on action values learned from the non-stationary environment that includes the other player.
+"""
 
 # ╔═╡ c4929e3a-c48f-4ba1-bf78-32f42fa7446d
-const soccer_iql = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 1_000_000, α_decay = 0.9999954f0, ϵ = 0.2f0)
+const soccer_iql = independent_q_learning(soccer_game, 0.9f0; α = .5f0, max_steps = 500_000, α_decay = 0.9999954f0, ϵ = 0.2f0, save_history = true)
 
 # ╔═╡ e6f529bf-c71e-431a-90ae-884d59d12132
-test_soccer_policies(soccer_iql.policies...)
+const soccer_iql_stats = display_soccer_statistics(soccer_iql.policies..., "IQL", "IQL")
+
+# ╔═╡ 448ed962-b29f-445a-bb62-29c617a0b12e
+md"""
+Notice that these players do not perform according to the equilibrium solution which requires stochastic policies.  Instead they get trapped in a draw only sceneario but the algorithm does not appear to converge looking at the average reward over time.  That is because any deterministic policy can be exploited by another one resulting in cycles of performance swapping.
+"""
 
 # ╔═╡ eda86d7a-87ca-4f07-9ca9-e9045906da92
-test_soccer_policies(soccer_iql.policies[1], soccer_random_policy)
+const iql_vs_random_stats = display_soccer_statistics(soccer_iql.policies[1], soccer_random_policy, "IQL", "Random")
 
-# ╔═╡ 879e7384-7786-43b2-a36f-229929e802cf
-#=╠═╡
-test_soccer_policies(soccer_iql.policies[1], soccer_jal.policies[2])
-  ╠═╡ =#
+# ╔═╡ 33669b7d-4609-4a11-a6d2-7569a582353e
+md"""
+### Policy Performance vs Optimal Opponents
 
-# ╔═╡ 30ed524d-be39-41e2-adc4-86a3b155c3ed
-#=╠═╡
-test_soccer_policies(soccer_jal.policies[1], soccer_iql.policies[2])
-  ╠═╡ =#
+Now that we have used different methods to calculate soccer policies, we can train opponents specifically against them to see if the policies are exploitable.  These opponents represent worst case scenarios in which a policy can be thoroughly studied by an adversary to tailor a solution designed to perform well against it ignoring all other possible opponents.  Fixing one player's startegy is turns the problem into an MDP which has an optimal solution for the other player that can be written as a deterministic strategy.
+"""
+
+# ╔═╡ 7e0e10fe-2c5c-4c27-b21a-2568bebe8e6d
+md"""
+#### Random Policy
+
+Previously trained strategies had high success against the random policy, but training specifically against a random opponent can yield different results that achieve even higher expected rewards.
+"""
 
 # ╔═╡ c3418786-fa47-4eb3-b239-3183ff920cc7
-const soccer_iql_vs_random = independent_q_learning(soccer_game, 0.9f0; α = 0.5f0, max_steps = 1_000_000, train_policies = 1:1, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
-
-# ╔═╡ 6143ba81-edfc-40dc-8380-515b73cca2b7
-#=╠═╡
-plot(soccer_iql_vs_random.reward_history |> cumsum |> v -> v ./ (1:length(v)))
-  ╠═╡ =#
+const soccer_random_vs_optimal = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 1_000_000, train_policies = 2:2, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
 
 # ╔═╡ 91b0b90b-a1d7-42ac-a493-257dcc29bc6a
-test_soccer_policies(soccer_iql_vs_random.policies...)
+const random_vs_optimal_stats = display_soccer_statistics(soccer_random_vs_optimal.policies..., "Random", "Optimal")
 
-# ╔═╡ 32bc7859-7503-46c6-b8e0-2c3c22b2acc9
-#=╠═╡
-const soccer_iql_vs_jal = independent_q_learning(soccer_game, 0.9f0; α = 0.5f0, max_steps = 1_000_000, πs = (copy(soccer_random_policies[1]), soccer_jal.policies[2]), train_policies = 1:1, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
-  ╠═╡ =#
+# ╔═╡ b84645f7-7ce2-498a-9db7-0da603e2904a
+md"""
+#### Minimax Solution
 
-# ╔═╡ 72097ef2-0fcb-45c8-8537-253af364e35a
-#=╠═╡
-test_soccer_policies(soccer_iql_vs_jal.policies...)
-  ╠═╡ =#
+This strategy should be unexploitable meaning the best expected discounted reward one could hope to achieve against it is 0
+"""
 
 # ╔═╡ 63af1889-a4a6-4d0e-a21f-21107c0efed2
-const soccer_iql_vs_iql = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 1_000_000, πs = (copy(soccer_random_policy), soccer_iql.policies[2]), train_policies = 1:1, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
+const soccer_iql_vs_optimal = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 1_000_000, πs = (soccer_iql.policies[1], copy(soccer_random_policy)), train_policies = 2:2, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
 
 # ╔═╡ bd291ecb-f529-46da-8fab-ae172535afa9
 #=╠═╡
-plot(soccer_iql_vs_iql.reward_history |> cumsum |> v -> v ./ (1:length(v)))
+plot(soccer_iql_vs_optimal.reward_history |> cumsum |> v -> v ./ (1:length(v)))
   ╠═╡ =#
 
 # ╔═╡ 7f486f74-6b68-4e03-9d09-858091d51784
-test_soccer_policies(soccer_iql_vs_iql.policies...)
+const iql_vs_optimal_stats = display_soccer_statistics(soccer_iql_vs_optimal.policies..., "IQL", "Optimal")
 
 # ╔═╡ 5da718f5-c940-49a3-9c38-7af26a930439
 md"""
@@ -285,6 +362,26 @@ md"""
 md"""
 ## General
 """
+
+# ╔═╡ 9a80e476-bad5-4a8f-a8e2-0008a1e5d698
+#=╠═╡
+function plot_reward_learning_curve(v; npoints = 1000)
+	y = v |> cumsum |> x -> x ./ (1:length(x))
+	l = length(y)
+	inds = map(x -> round(Int64, x), LinRange(1, l, npoints))
+	plot(scatter(x = view(eachindex(y), inds), y = view(y, inds)), Layout(xaxis_title = "Training Steps", yaxis_title = "Player A Reward"))
+end
+  ╠═╡ =#
+
+# ╔═╡ 9d9db616-81b3-462b-9400-3cef27107c56
+#=╠═╡
+plot_reward_learning_curve(soccer_iql.reward_history)
+  ╠═╡ =#
+
+# ╔═╡ 2278415f-f4e5-4ed9-94ad-761941039b97
+#=╠═╡
+plot_reward_learning_curve(soccer_random_vs_optimal.reward_history)
+  ╠═╡ =#
 
 # ╔═╡ b053dc54-af90-463e-8510-38c33be32312
 #=╠═╡
@@ -352,16 +449,113 @@ HTML("""
 </style>
 """)
 
+# ╔═╡ c6ca307f-9753-4b0d-8fd8-ee05086fd5ed
+function join_str_vert(x::AbstractString, y::AbstractString)
+"""$x
+$y"""
+end
+
+# ╔═╡ 2f8b643d-0dbb-47b3-8644-eaaa1e5410cf
+join_hoz(x, y) = """$x|$y"""
+
+# ╔═╡ b8de4e87-0d28-4731-84f9-b0c8e799b9a5
+form_str_col(v::AbstractVector{T}) where T<:Real = mapreduce(x -> string("|", round(Float64(x); sigdigits = 3), "|"), join_str_vert, v)
+
+# ╔═╡ bfd96f31-f01f-4495-bde5-2ade7dcf2525
+function form_str_row(v::AbstractVector{T}) where T<:Real 
+	str = mapreduce(x -> round(Float64(x); sigdigits = 3), join_hoz, v)
+	"""|$str|"""
+end
+
+# ╔═╡ 445b2fca-85cf-4937-a827-88453b96dba1
+function form_str_row(v::AbstractVector)
+	str = reduce(join_hoz, v)
+	"""|$str|"""
+end
+
+# ╔═╡ 4d8eb87e-c43b-4b55-b632-79bca14b7759
+function form_str_mat(x::Matrix)
+	rows = [form_str_row(r) for r in eachrow(x)]
+	reduce(join_str_vert, rows)
+end
+
+# ╔═╡ ab01fea4-2da7-47c6-81e7-847ffeda8b34
+form_table_mat(x::Matrix) = form_table_mat(x, ["" for _ in 1:size(x, 2)])
+
+# ╔═╡ 6eccc26c-85a5-4ee4-90e7-874c9b670081
+function form_table_id(n::Integer)
+	str = mapreduce(x -> "---", join_hoz, 1:n)
+	"""|$str|"""
+end
+
+# ╔═╡ cd97f119-5eeb-424c-b73a-86c525cd3787
+function form_table_mat(x::Matrix, header::AbstractVector)
+	body = form_str_mat(x)
+	head_str = form_str_row(header)
+	id_str = form_table_id(length(header))
+	Markdown.parse("""
+	$head_str
+	$id_str
+	$body
+	""")
+end
+
+# ╔═╡ 4ff02aaf-950e-463f-9c69-306a1ca5c4b0
+form_table_id(5)
+
+# ╔═╡ d23092be-c8b8-4723-a435-83e3e2e30650
+function display_markdown_vector(v::AbstractVector{T}; name::AbstractString = "") where T<:Real
+	str = form_str_col(v)
+	Markdown.parse("""			   
+|$name|
+|---|			   
+$str				   
+""")
+end
+
+# ╔═╡ 6383ab5d-9d91-42f9-8a7f-427408ca356f
+#=╠═╡
+function form_table_mat(x::Matrix, rownames::AbstractVector, colnames::AbstractVector; str = "Policies")
+	mat = form_table_mat(x, colnames)
+
+	rowtab = display_markdown_vector(rownames; name = str)
+
+	@htl("""
+		
+		 <div style = "display: flex; justify-content: center; font-size: 100%;">
+		 <div style = "font-weight: bolder;">
+		 $rowtab
+		 </div>
+		 $mat
+		 </div>
+		 """)
+end
+  ╠═╡ =#
+
+# ╔═╡ 05aef224-961e-4ee9-84bb-6d6002c29e79
+#=╠═╡
+form_table_mat(rand(5, 5), rand(5), rand(5))
+  ╠═╡ =#
+
+# ╔═╡ 3c1bfb16-c9d9-4c88-8f0b-749526b0018e
+display_markdown_vector(rand(5))
+
+# ╔═╡ 400aea40-3d2c-4696-b31c-3e0518341998
+display_markdown_vector(rand(9); name= "π_A")
+
 # ╔═╡ 697e2312-c9a6-47b3-b13c-277ad4b0efb2
 md"""
 ## Soccer Game
 """
 
+# ╔═╡ 2b067fa4-3597-451b-8572-5ff877c68498
+create_soccer_visualization() = create_soccer_visualization(soccer_random_policy, soccer_random_policy)
+
 # ╔═╡ 322d6682-05db-41cc-b6d4-42d772b051ac
-plot_soccer_solution(episode_length::Integer, player1_wins::Bool, s::TwoPlayerSoccer.State{W, H, GH}, πs::Tuple{Matrix, Matrix}, value_functions::Tuple{Matrix, Matrix}) where {W, H, GH} = plot_soccer_solution(episode_length, player1_wins, s, πs, (maximum.(eachcol(value_functions[1])), maximum.(eachcol(value_functions[2]))))
+plot_soccer_solution(episode_length::Integer, player1_wins::Bool, s::TwoPlayerSoccer.State{W, H, GH}, a::Tuple{Int64, Int64}, πs::Tuple{Matrix, Matrix}, value_functions::Tuple{Matrix, Matrix}; kwargs...) where {W, H, GH} = plot_soccer_solution(episode_length, player1_wins, s, a, πs, (maximum.(eachcol(value_functions[1])), maximum.(eachcol(value_functions[2]))); kwargs...)
 
 # ╔═╡ d056d56d-3c46-4d3d-8789-e1ad4aa41bf1
-plot_soccer_solution(episode_length::Integer, player1_wins::Bool, s::TwoPlayerSoccer.State{W, H, GH}, πs::Tuple{Matrix, Matrix}, value_function::Array) where {W, H, GH} = plot_soccer_solution(episode_length, player1_wins, s, πs, (value_function, -value_function))
+plot_soccer_solution(episode_length::Integer, player1_wins::Bool, s::TwoPlayerSoccer.State{W, H, GH}, a::Tuple{Int64, Int64}, πs::Tuple{Matrix, Matrix}, value_function::Array; kwargs...) where {W, H, GH} = plot_soccer_solution(episode_length, player1_wins, s, a, πs, (value_function, -value_function); kwargs...)
 
 # ╔═╡ 7ab9b64b-6571-4cd4-bf9f-6ad00015dac8
 #=╠═╡
@@ -389,10 +583,8 @@ function plot_soccer_state(s::TwoPlayerSoccer.State{W, H, GH}) where {W, H, GH}
 end
   ╠═╡ =#
 
-# ╔═╡ a5901beb-eac1-4056-b0e0-1add182b061d
-#=╠═╡
-plot_soccer_state(soccer_game.states[vcat(soccer_rnd_ep[1], soccer_rnd_ep[4])[ep_step]])
-  ╠═╡ =#
+# ╔═╡ 50357183-c467-48c9-b1c7-05d7c2a5db55
+plot_soccer_state(i_s::Integer) = plot_soccer_state(soccer_game.states[i_s])
 
 # ╔═╡ ab3793ad-1069-4b77-a95a-4474fcd7c662
 #=╠═╡
@@ -409,129 +601,22 @@ function display_soccer_policy(v::AbstractVector{T}; scale = 1.0) where T<:Real
 end
   ╠═╡ =#
 
-# ╔═╡ e3cc189b-80a8-44a9-b734-59eece616647
+# ╔═╡ 1168356f-fedf-4e53-a761-89f99f6b3812
 #=╠═╡
-function plot_soccer_solution(episode_length::Integer, player1_wins::Bool, s::TwoPlayerSoccer.State{W, H, GH}, πs::Tuple{Matrix, Matrix}, value_functions::Tuple{Vector, Vector}) where {W, H, GH}	
-	state_plot = plot_soccer_state(s)
-	i_s = soccer_game.state_index[s]
-	v1 = πs[1][:, i_s]
-	v2 = πs[2][:, i_s]
-	π1_disp = display_soccer_policy(v1)
-	π2_disp = display_soccer_policy(v2)
-
-	winner_name = player1_wins ? "A" : "B"
-
+function display_soccer_policy(i_a::Integer; scale = 1.0)
+	iszero(i_a) && return @htl("""""")
+	v = zeros(5)
+	v[i_a] = 1
 	@htl("""
-	<div style = "width: 600px;">
-		 $episode_length step game won by $winner_name
-		<div style = "display: flex; justify-content: space-around; background-color: white; color: black;">
-		 <div>
-		  Player 1 Value/Policy: $(value_functions[1][i_s])
-		 $π1_disp
-		 </div>
-		 <div>
-		  Player 2 Value/Policy: $(value_functions[2][i_s])
-		 $π2_disp
-		 </div>
-		 </div>
-		 $state_plot
-	</div>
-		 """)
+		<div style = "display: flex; align-items: center; justify-content: center; transform: scale($scale);">
+		<div class = "downarrow" style = "position: absolute; transform: rotate(180deg); opacity: $(v[1]);"></div>	
+		<div class = "downarrow" style = "position: absolute; opacity: $(v[2])"></div>
+		<div class = "downarrow" style = "position: absolute; transform: rotate(90deg); opacity: $(v[3])"></div>
+		<div class = "downarrow" style = "transform: rotate(-90deg); opacity: $(v[4])"></div>
+		<div class = "idle" style = "position: absolute; opacity: $(v[5])"></div>
+		</div>
+	""")
 end
-  ╠═╡ =#
-
-# ╔═╡ bf9e5075-3595-42ca-9b73-0e16e608b946
-#=╠═╡
-function plot_soccer_solution(episode_length::Integer, player1_wins::Bool, s::TwoPlayerSoccer.State{W, H, GH}, πs::Tuple{Matrix, Matrix}) where {W, H, GH}	
-	state_plot = plot_soccer_state(s)
-	i_s = soccer_game.state_index[s]
-	v1 = πs[1][:, i_s]
-	v2 = πs[2][:, i_s]
-	π1_disp = display_soccer_policy(v1)
-	π2_disp = display_soccer_policy(v2)
-
-	winner_name = player1_wins ? "A" : "B"
-
-	@htl("""
-	<div style = "width: 600px;">
-		  $episode_length step game won by $winner_name
-		<div style = "display: flex; justify-content: space-around; background-color: white; color: black;">
-		
-		 <div>
-		  Player 1 Policy
-		 $π1_disp
-		 </div>
-		 <div>
-		  Player 2 Policy
-		 $π2_disp
-		 </div>
-		 </div>
-		 $state_plot
-	</div>
-		 """)
-end
-  ╠═╡ =#
-
-# ╔═╡ ee51c98e-444e-4a44-bb67-ea91f739d731
-#=╠═╡
-function create_soccer_visualization(π1, π2, vs...)
-	ep = runepisode(soccer_game; πs = (π1, π2), max_steps = 1_000)
-	el = Slider(1:length(ep[1])+1; show_value=true)
-
-	function f(ep_step) 
-		soccer_state_index = vcat(ep[1], ep[4])[ep_step]
-		s = soccer_game.states[soccer_state_index]
-		plot_soccer_solution(length(ep[1]), isone(ep[3][end]), s, (π1, π2), vs...)
-	end
-
-	return (slider = el, plot_function = f)
-end
-  ╠═╡ =#
-
-# ╔═╡ feb35b37-c99f-40b7-b181-a86038a8ed92
-#=╠═╡
-iql_viz = create_soccer_visualization(soccer_iql.policies..., soccer_iql.value_estimates)
-  ╠═╡ =#
-
-# ╔═╡ f3566f79-350b-40ad-9817-af038202fd11
-#=╠═╡
-@bind iql_step iql_viz.slider
-  ╠═╡ =#
-
-# ╔═╡ 03178016-9014-45a8-a977-1e3c794d3db6
-#=╠═╡
-iql_viz.plot_function(iql_step)
-  ╠═╡ =#
-
-# ╔═╡ 50a06568-bd54-4f0c-82a1-532050980940
-#=╠═╡
-iql_vs_random_viz = create_soccer_visualization(soccer_iql_vs_random.policies...)
-  ╠═╡ =#
-
-# ╔═╡ 97e10e56-9990-4b53-bf01-109eda72bb1c
-#=╠═╡
-@bind iql_vs_random_step iql_vs_random_viz.slider
-  ╠═╡ =#
-
-# ╔═╡ d5351789-cd1a-4b20-9e96-8f3810b811f1
-#=╠═╡
-iql_vs_random_viz.plot_function(iql_vs_random_step)
-  ╠═╡ =#
-
-# ╔═╡ cd3bb7ba-3560-40a9-b166-7cb5cb23f316
-# ╠═╡ disabled = true
-#=╠═╡
-iql_vs_iql_viz = create_soccer_visualization(soccer_iql_vs_iql.policies..., soccer_iql_vs_iql.value_estimates)
-  ╠═╡ =#
-
-# ╔═╡ 5cfcb48f-59af-435c-81ea-170eb8a94c78
-#=╠═╡
-@bind iql_vs_iql_step iql_vs_iql_viz.slider
-  ╠═╡ =#
-
-# ╔═╡ bf7a9be7-5e04-4059-b67e-01b30f929036
-#=╠═╡
-iql_vs_iql_viz.plot_function(iql_vs_iql_step)
   ╠═╡ =#
 
 # ╔═╡ 9d54ee68-d60c-11f0-87d1-3be62822741b
@@ -585,7 +670,7 @@ begin
 
 		c = (!player1 - player1)
 
-		if all(iszero, m) 
+		if all(x -> isapprox(x, zero(T); atol = eps(one(T))), view(m, :, :, i_s)) 
 			p = one(T) / x_length
 			@inbounds @simd for i in 1:x_length
 				π[i, i_s] = p
@@ -600,7 +685,7 @@ begin
 			reward_matrix[i_a1, i_a2] = r
 		end end
 
-		if all(x -> isapprox(x, reward_matrix[1]), reward_matrix) 
+		if all(x -> isapprox(x, reward_matrix[1]; atol = eps(one(T))), reward_matrix) 
 			p = one(T) / x_length
 			@inbounds @simd for i in 1:x_length
 				π[i, i_s] = max(zero(T), p)
@@ -642,6 +727,7 @@ function value_iteration_game!(v_est::Vector{T}, πs::NTuple{2, Matrix{T}}, m_es
 	state_transitions = ptf.state_transition_map
 	reward_transitions = ptf.reward_transition_map
 
+	#setup two models, one for each player, since in general the available actions could differ from one player to another
 	model1 = Model(HiGHS.Optimizer)
 	model2 = Model(HiGHS.Optimizer)
 
@@ -684,7 +770,7 @@ function value_iteration_game!(v_est::Vector{T}, πs::NTuple{2, Matrix{T}}, m_es
 		solve_minimax_game!(reward_matrix, πs[2], model2, y, m_est, i_s, false)
 	end
 
-	return (final_values = v_est, total_sweeps = sweep, final_policies = πs, game_rewards = m_est)
+	return (values = v_est, total_sweeps = sweep, policies = πs, game_rewards = m_est)
 end
 
 # ╔═╡ af0265b8-7fe9-499a-b675-32bf5ba76f64
@@ -698,9 +784,217 @@ end
 # ╠═╡ show_logs = false
 const soccer_value_iter = value_iteration_game(soccer_game, 0.9f0; θ = 1f-5)
 
+# ╔═╡ 30d70205-a091-4155-87f5-d0ada3b597e0
+const minimax_vs_minimax_stats = display_soccer_statistics(soccer_value_iter.policies..., "Minimax", "Minimax")
+
+# ╔═╡ 19d9e4b3-2c6b-4f33-a5be-32aa4a38513a
+const minimax_vs_random_stats = display_soccer_statistics(soccer_value_iter.policies[1], soccer_random_policy, "Minimax", "Random")
+
+# ╔═╡ 84fdc00e-43d1-44c4-b479-d7be79c2d4cd
+const random_vs_minimax_stats = display_soccer_statistics(soccer_random_policy, soccer_value_iter.policies[2], "Random", "Minimax")
+
+# ╔═╡ 0fc4963b-2100-4b5d-a663-1c5306f311ca
+const iql_vs_minimax_stats = display_soccer_statistics(soccer_iql.policies[1], soccer_value_iter.policies[2], "IQL", "Minimax")
+
+# ╔═╡ 140a1608-8105-4d9c-a839-12e94483eab4
+const soccer_minimax_vs_optimal = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 1_000_000, πs = (soccer_value_iter.policies[1], copy(soccer_random_policy)), train_policies = 2:2, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
+
+# ╔═╡ d3a1b675-a218-4543-a501-df25b7255762
+#=╠═╡
+plot(soccer_minimax_vs_optimal.reward_history |> cumsum |> v -> v ./ (1:length(v)))
+  ╠═╡ =#
+
+# ╔═╡ 4b940a7f-21aa-44f3-9ecf-03e3ab0c2900
+const minimax_vs_optimal_stats = display_soccer_statistics(soccer_minimax_vs_optimal.policies..., "Minimax", "Optimal")
+
+# ╔═╡ 7ba3754f-4a2d-4f87-a303-e37ea2376947
+#=╠═╡
+function display_soccer_minimax(i_s::Integer; game_rewards = soccer_value_iter.game_rewards, πs = soccer_value_iter.policies, values = soccer_value_iter.values, str = "Mimimax Policies")
+	reward_matrix = game_rewards[:, :, i_s]
+	π1 = πs[1][:, i_s]
+	π2 = πs[2][:, i_s]
+	game_value = values[i_s]
+
+	table = form_table_mat(reward_matrix, π1, π2; str = str)
+	# (reward_matrix = reward_matrix, π_A = π1, π_B = π2, game_value = game_value)
+	
+	@htl("""
+		 <div style = "display: flex; justify-content: space-around; color: black; background-color: white; font-size: 120%;">
+		 	<div>
+		 		<div style = "display: flex; justify-content: center; align-items: center;">
+		 			$(display_soccer_policy(π2))
+		 			<div style = "margin-left: 30px;">Player B Policy</div>
+		 		</div>
+		 		<div style = "display: flex; justify-content: space-between; align-items: center;">
+		 			$table
+		 			<div>
+		 			<div style = "display: flex; justify-content: center; align-items: center; padding-left: 10%;">
+		 				$(display_soccer_policy(π1))		
+		 <div style = "margin-left: 30px;">Player A Policy</div>
+		 				
+		 			</div>
+		 			Game Value: $(round(Float64(game_value); sigdigits = 3))
+		 			</div>
+		 		</div>
+		 	</div>
+			 
+		 </div>
+		 """)
+end
+  ╠═╡ =#
+
+# ╔═╡ e3cc189b-80a8-44a9-b734-59eece616647
+#=╠═╡
+function plot_soccer_solution(episode_length::Integer, player1_wins::Bool, s::TwoPlayerSoccer.State{W, H, GH}, a::Tuple{Int64, Int64}, πs::Tuple{Matrix, Matrix}, value_functions::Tuple{Vector, Vector}; show_minimax::Bool = false, minimax2::Bool = false, kwargs...) where {W, H, GH}	
+	state_plot = plot_soccer_state(s)
+	i_s = soccer_game.state_index[s]
+	v1 = πs[1][:, i_s]
+	v2 = πs[2][:, i_s]
+	π1_disp = display_soccer_policy(v1)
+	a1_disp = display_soccer_policy(a[1])
+	π2_disp = display_soccer_policy(v2)
+	a2_disp = display_soccer_policy(a[2])
+	winner_name = player1_wins ? "A" : "B"
+
+	minimax_disp = show_minimax ? display_soccer_minimax(i_s) : @htl("""""")
+	minimax_disp2 = minimax2 ? display_soccer_minimax(i_s; kwargs...) : @htl("""""")
+
+	@htl("""
+	<div style = "display: flex; align-items: center; justify-content: space-around;">
+	<div style = "max-width: 50%; font-weight: bold; font-size: 125%;">
+		 $episode_length step game won by $winner_name
+		<div style = "display: flex; justify-content: space-around; background-color: white; color: black;">
+		 <div style = "color: blue; font-weight: bold;">
+			Player A Value: $(value_functions[1][i_s])
+			 <div style = "display: flex; justify-content: space-around;">
+				 <div>
+					 Policy
+					 $π1_disp
+				 </div>
+				 <div>
+					 Action
+					 $a1_disp
+				 </div>
+			 </div>
+		 </div>
+		 <div style = "color: red; font-weight: bold;">
+		 	Player B Value: $(value_functions[2][i_s])
+				<div style = "display: flex; justify-content: space-around;">
+				 <div>
+					 Policy
+					 $π2_disp
+				 </div>
+				 <div>
+					 Action
+					 $a2_disp
+				 </div>
+			 </div>
+			 </div>
+		</div>
+		$state_plot
+	</div>
+	<div style = "width: 50%">
+	$minimax_disp
+	$minimax_disp2
+	</div>
+		 </div>
+		 """)
+end
+  ╠═╡ =#
+
+# ╔═╡ bf9e5075-3595-42ca-9b73-0e16e608b946
+#=╠═╡
+function plot_soccer_solution(episode_length::Integer, player1_wins::Bool, s::TwoPlayerSoccer.State{W, H, GH}, a::Tuple{Int64, Int64}, πs::Tuple{Matrix, Matrix}; show_minimax::Bool = false, minimax2::Bool = false, kwargs...) where {W, H, GH}	
+	state_plot = plot_soccer_state(s)
+	i_s = soccer_game.state_index[s]
+	v1 = πs[1][:, i_s]
+	v2 = πs[2][:, i_s]
+	π1_disp = display_soccer_policy(v1)
+	π2_disp = display_soccer_policy(v2)
+	a1_disp = display_soccer_policy(a[1])
+	a2_disp = display_soccer_policy(a[2])
+	winner_name = player1_wins ? "A" : "B"
+	minimax_disp = show_minimax ? display_soccer_minimax(i_s) : @htl("""""")
+	minimax_disp2 = minimax2 ? display_soccer_minimax(i_s; kwargs...) : @htl("""""")
+	
+	@htl("""
+	<div style = "display: flex; align-items: center; justify-content: space-around;">
+	<div style = "width: 600px; font-weight: bold; font-size: 125%;">
+		 $episode_length step game won by $winner_name
+		<div style = "display: flex; justify-content: space-around; background-color: white; color: black;">
+		 <div style = "width: 33%; text-align: center; color: blue; font-weight: bold;">
+			Player A
+			 <div style = "display: flex; justify-content: space-around;">
+				 <div>
+					 Policy
+					 $π1_disp
+				 </div>
+				 <div>
+					 Action
+					 $a1_disp
+				 </div>
+			 </div>
+		 </div>
+		 <div style = "width: 33%; text-align: center; color: red; font-weight: bold;">
+		 	Player B
+				<div style = "display: flex; justify-content: space-around;">
+				 <div>
+					 Policy
+					 $π2_disp
+				 </div>
+				 <div>
+					 Action
+					 $a2_disp
+				 </div>
+			 </div>
+			 </div>
+		</div>
+		$state_plot
+	</div>
+	<div style = "width: 50%">
+	$minimax_disp
+	$minimax_disp2
+	</div>
+	</div>
+		 """)
+end
+  ╠═╡ =#
+
+# ╔═╡ ee51c98e-444e-4a44-bb67-ea91f739d731
+#=╠═╡
+function create_soccer_visualization(π1, π2, vs...)
+	ep = runepisode(soccer_game; πs = (π1, π2), max_steps = 1_000)
+	el = Slider(1:length(ep[1])+1; show_value=true)
+
+	function f(ep_step; kwargs...) 
+		soccer_state_index = vcat(ep[1], ep[4])[ep_step]
+		s = soccer_game.states[soccer_state_index]
+		a = ep_step > length(ep[2]) ? (0, 0) : ep[2][ep_step]
+		plot_soccer_solution(length(ep[1]), isone(ep[3][end]), s, a, (π1, π2), vs...; kwargs...)
+	end
+
+	return (slider = el, plot_function = f)
+end
+  ╠═╡ =#
+
+# ╔═╡ 7c691c82-6de9-47ee-8b61-e3e239976ecc
+#=╠═╡
+const soccer_random_viz = create_soccer_visualization()
+  ╠═╡ =#
+
+# ╔═╡ dceebec1-bf10-4389-9ef8-864ea59e92e8
+#=╠═╡
+@bind soccer_rnd_step soccer_random_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ 25c1c075-b10a-4bc1-b113-39b684d8f939
+#=╠═╡
+soccer_random_viz.plot_function(soccer_rnd_step)
+  ╠═╡ =#
+
 # ╔═╡ 74d539f4-defc-4e5e-a085-a30e96df75bf
 #=╠═╡
-const soccer_ideal_viz = create_soccer_visualization(soccer_value_iter.final_policies..., soccer_value_iter.final_values)
+const soccer_ideal_viz = create_soccer_visualization(soccer_value_iter.policies..., soccer_value_iter.values)
   ╠═╡ =#
 
 # ╔═╡ 036e8dbe-9acb-41bd-83eb-957da19fd86d
@@ -710,47 +1004,87 @@ const soccer_ideal_viz = create_soccer_visualization(soccer_value_iter.final_pol
 
 # ╔═╡ 37c4bbe2-f78e-4ad1-a0fb-a00da11631f1
 #=╠═╡
-soccer_ideal_viz.plot_function(soccer_ideal_step)
+soccer_ideal_viz.plot_function(soccer_ideal_step; show_minimax = true)
   ╠═╡ =#
 
-# ╔═╡ 84fdc00e-43d1-44c4-b479-d7be79c2d4cd
-test_soccer_policies(soccer_random_policy, soccer_value_iter.final_policies[2])
-
-# ╔═╡ 19d9e4b3-2c6b-4f33-a5be-32aa4a38513a
-test_soccer_policies(soccer_value_iter.final_policies[1], soccer_random_policy)
-
-# ╔═╡ 0fc4963b-2100-4b5d-a663-1c5306f311ca
-test_soccer_policies(soccer_iql.policies[1], soccer_value_iter.final_policies[2])
-
-# ╔═╡ 140a1608-8105-4d9c-a839-12e94483eab4
-const soccer_iql_vs_minimax = independent_q_learning(soccer_game, 0.9f0; α = 0.5f0, max_steps = 1_000_000, πs = (copy(soccer_random_policy), soccer_value_iter.final_policies[2]), train_policies = 1:1, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
-
-# ╔═╡ d3a1b675-a218-4543-a501-df25b7255762
+# ╔═╡ b22df2e2-d76d-4426-a704-42a291103603
 #=╠═╡
-plot(soccer_iql_vs_minimax.reward_history |> cumsum |> v -> v ./ (1:length(v)))
+const soccer_minimax_vs_random_viz = create_soccer_visualization(soccer_value_iter.policies[1], soccer_random_policy, soccer_value_iter.values)
+  ╠═╡ =#
+
+# ╔═╡ b29a3234-8717-4b12-ac64-a79a0a74113a
+#=╠═╡
+@bind minimax_vs_random_step soccer_minimax_vs_random_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ 46791653-7452-4afb-8639-ac753af9f249
+#=╠═╡
+soccer_minimax_vs_random_viz.plot_function(minimax_vs_random_step; show_minimax = true)
+  ╠═╡ =#
+
+# ╔═╡ feb35b37-c99f-40b7-b181-a86038a8ed92
+#=╠═╡
+iql_viz = create_soccer_visualization(soccer_iql.policies..., soccer_iql.value_estimates)
+  ╠═╡ =#
+
+# ╔═╡ f3566f79-350b-40ad-9817-af038202fd11
+#=╠═╡
+@bind iql_step iql_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ 03178016-9014-45a8-a977-1e3c794d3db6
+#=╠═╡
+iql_viz.plot_function(iql_step)
+  ╠═╡ =#
+
+# ╔═╡ 50a06568-bd54-4f0c-82a1-532050980940
+#=╠═╡
+random_vs_optimal_viz = create_soccer_visualization(soccer_random_vs_optimal.policies...)
+  ╠═╡ =#
+
+# ╔═╡ 97e10e56-9990-4b53-bf01-109eda72bb1c
+#=╠═╡
+@bind random_vs_optimal_step random_vs_optimal_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ d5351789-cd1a-4b20-9e96-8f3810b811f1
+#=╠═╡
+random_vs_optimal_viz.plot_function(random_vs_optimal_step)
   ╠═╡ =#
 
 # ╔═╡ d6dc4e3c-faa7-426c-972e-dacf9bf6ba88
 #=╠═╡
-iql_vs_minimax_viz = create_soccer_visualization(soccer_iql_vs_minimax.policies..., soccer_iql_vs_minimax.value_estimates)
+minimax_vs_optimal_viz = create_soccer_visualization(soccer_minimax_vs_optimal.policies..., soccer_minimax_vs_optimal.value_estimates)
   ╠═╡ =#
 
 # ╔═╡ e071b761-5df2-4776-a959-2b8546027cd6
 #=╠═╡
-@bind iql_vs_minimax_step iql_vs_minimax_viz.slider
+@bind minimax_vs_optimal_step minimax_vs_optimal_viz.slider
   ╠═╡ =#
 
 # ╔═╡ b1f4df52-2049-43e6-bc46-fe7e192e74ca
 #=╠═╡
-iql_vs_minimax_viz.plot_function(iql_vs_minimax_step)
+minimax_vs_optimal_viz.plot_function(minimax_vs_optimal_step)
   ╠═╡ =#
 
-# ╔═╡ 4b940a7f-21aa-44f3-9ecf-03e3ab0c2900
-test_soccer_policies(soccer_iql_vs_minimax.policies[1], soccer_value_iter.final_policies[2])
+# ╔═╡ cd3bb7ba-3560-40a9-b166-7cb5cb23f316
+#=╠═╡
+iql_vs_optimal_viz = create_soccer_visualization(soccer_iql_vs_optimal.policies..., soccer_iql_vs_optimal.value_estimates)
+  ╠═╡ =#
+
+# ╔═╡ 5cfcb48f-59af-435c-81ea-170eb8a94c78
+#=╠═╡
+@bind iql_vs_optimal_step iql_vs_optimal_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ bf7a9be7-5e04-4059-b67e-01b30f929036
+#=╠═╡
+iql_vs_optimal_viz.plot_function(iql_vs_optimal_step)
+  ╠═╡ =#
 
 # ╔═╡ a1407418-2efb-4bee-9645-d029735d99f7
 #=╠═╡
-viz_test = create_soccer_visualization(soccer_value_iter.final_policies..., soccer_value_iter.final_values)
+viz_test = create_soccer_visualization(soccer_value_iter.policies..., soccer_value_iter.values)
   ╠═╡ =#
 
 # ╔═╡ 78815d3e-b1fa-4a60-b86d-07a5e40fea60
@@ -760,7 +1094,7 @@ viz_test = create_soccer_visualization(soccer_value_iter.final_policies..., socc
 
 # ╔═╡ 511e384b-697e-4397-8ec5-bf5449b9eee5
 #=╠═╡
-viz_test.plot_function(test_step)
+viz_test.plot_function(test_step; show_minimax = true)
   ╠═╡ =#
 
 # ╔═╡ 95a3fcca-1f0c-49e9-9e9c-b1bea8cb76c4
@@ -801,7 +1135,7 @@ function jal_gt!(q_est::Array{T, 3}, πs::NTuple{2, Matrix{T}}, game::TabularSto
 			a[2] = sample_action(πs[2], i_s)
 		end
 
-		(r, i_s′) = game.ptf(i_s, Tuple(a))
+		(r, i_s′) = game.ptf(i_s, NTuple{2, Int64}(a))
 
 		if game.terminal_states[i_s′]
 			game_state_value = zero(T)
@@ -811,7 +1145,11 @@ function jal_gt!(q_est::Array{T, 3}, πs::NTuple{2, Matrix{T}}, game::TabularSto
 		else
 			game_state_value = solve_minimax_game!(reward_matrix, πs[1], model1, x, q_est, i_s′, true)
 		end
-		q_est[a[1], a[2], i_s] += α_step * (r + γ*game_state_value - q_est[a[1], a[2], i_s])
+
+		
+		target = r + γ*game_state_value
+		δ = target - q_est[a[1], a[2], i_s]
+		q_est[a[1], a[2], i_s] += α_step * δ
 
 		i_s = i_s′
 		step += 1
@@ -834,35 +1172,93 @@ end
 
 # ╔═╡ e12a9ce4-1441-4863-9e31-19d04f512c61
 # ╠═╡ show_logs = false
-const soccer_jal = jal_gt(soccer_game, 0.9f0, typemax(Int64), 100_000; α = .5f0, ϵ = 0.2f0, α_decay = 0.9999954f0)
+const soccer_jal = jal_gt(soccer_game, 0.9f0, typemax(Int64), 1_000_000; α = 1f0, ϵ = 0.2f0, α_decay = 0.9999954f0)
+
+# ╔═╡ 5906e0f9-eaf6-44f0-bfee-fdb4dd02f08b
+const jal_values = [soccer_jal.joint_action_values[:, :, i_s] .* (soccer_jal.policies[1][:, i_s] * soccer_jal.policies[2][:, i_s]') |> sum for i_s in eachindex(soccer_game.states)]
 
 # ╔═╡ a86d8b48-6619-4f92-aa17-17e3c4a5f4f7
-test_soccer_policies(soccer_jal.policies[1], soccer_value_iter.final_policies[2])
+const soccer_jal_stats = display_soccer_statistics(soccer_jal.policies..., "Minimax Q", "Minimax Q")
+
+# ╔═╡ a2f8445e-8b83-4903-b829-15b997e4c3fc
+#=╠═╡
+const soccer_jal_viz = create_soccer_visualization(soccer_jal.policies...)
+  ╠═╡ =#
+
+# ╔═╡ 98f6ddc3-c534-4ba2-bce6-97b29e1428e4
+#=╠═╡
+@bind soccer_jal_step soccer_jal_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ a3fd5c60-105c-4c9d-909f-0a0af6c592c3
+#=╠═╡
+soccer_jal_viz.plot_function(soccer_jal_step; show_minimax=true, minimax2 = true, game_rewards = soccer_jal.joint_action_values, πs = soccer_jal.policies, values = jal_values, str = "Minimax Q πs")
+  ╠═╡ =#
 
 # ╔═╡ 1eaed379-6f4d-4634-aea6-a5b1941389d4
-test_soccer_policies(soccer_jal.policies[1], soccer_random_policy)
+const soccer_jal_vs_random_stats = display_soccer_statistics(soccer_jal.policies[1], soccer_random_policy, "Minimax Q", "Random")
 
-# ╔═╡ 41b36c98-09a9-4951-a587-9d9e982559be
-test_soccer_policies(soccer_random_policy, soccer_jal.policies[2])
+# ╔═╡ f6ea001e-38f6-428c-a107-4ddcf817f470
+(exact_solution = minimax_vs_random_stats, estimated_solution = soccer_jal_vs_random_stats)
 
 # ╔═╡ 46060259-a774-4ff1-b415-27a5c6e9fa40
 #=╠═╡
-jal_viz = create_soccer_visualization(soccer_jal.policies[1], soccer_random_policy, soccer_value_iter.final_values)
+const soccer_jal_vs_random_viz = create_soccer_visualization(soccer_jal.policies[1], soccer_random_policy)
   ╠═╡ =#
 
 # ╔═╡ 59461d31-4d11-4802-8e58-996a0fa7bf67
 #=╠═╡
-@bind jal_step jal_viz.slider
+@bind soccer_jal_vs_random_step soccer_jal_vs_random_viz.slider
   ╠═╡ =#
 
 # ╔═╡ 0bb09a54-4d4b-472d-86cc-133a9d73349c
 #=╠═╡
-jal_viz.plot_function(jal_step)
+soccer_jal_vs_random_viz.plot_function(soccer_jal_vs_random_step)
   ╠═╡ =#
 
-# ╔═╡ 91a4a1c8-4006-4c63-8cc1-bf665d0946ce
+# ╔═╡ fb3e4d0f-bc6c-45a2-9491-225ef7b8f647
+const soccer_jal_vs_minimax_stats = display_soccer_statistics(soccer_jal.policies[1], soccer_value_iter.policies[2], "Minimax Q", "Minimax")
+
+# ╔═╡ 349e7689-24bd-467d-a7f0-73332fc93118
 #=╠═╡
-@plutoprofview jal_gt(soccer_game, 0.9f0, typemax(Int64), 10_000; α = 0.2f0, ϵ = 0.2f0)
+const soccer_jal_vs_minimax_viz = create_soccer_visualization(soccer_jal.policies[1], soccer_value_iter.policies[2])
+  ╠═╡ =#
+
+# ╔═╡ 1e15c352-c684-49ff-bbff-3cfeac7b41f6
+#=╠═╡
+@bind soccer_jal_vs_minimax_step soccer_jal_vs_minimax_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ ffbd79f9-ac31-4ff4-ab8d-7c8603dfedf6
+#=╠═╡
+soccer_jal_vs_minimax_viz.plot_function(soccer_jal_vs_minimax_step; show_minimax=true, minimax2 = true, game_rewards = soccer_jal.joint_action_values, πs = soccer_jal.policies, values = jal_values, str = "Minimax Q πs")
+  ╠═╡ =#
+
+# ╔═╡ 879e7384-7786-43b2-a36f-229929e802cf
+const iql_vs_jal_stats = display_soccer_statistics(soccer_iql.policies[1], soccer_jal.policies[2], "IQL", "Minimax Q")
+
+# ╔═╡ 30ed524d-be39-41e2-adc4-86a3b155c3ed
+const jal_vs_jal_stats = display_soccer_statistics(soccer_jal.policies[1], soccer_iql.policies[2], "Minimax Q", "Minimax Q")
+
+# ╔═╡ 32bc7859-7503-46c6-b8e0-2c3c22b2acc9
+const soccer_jal_vs_optimal = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 1_000_000, πs = (soccer_jal.policies[1], copy(soccer_random_policy)), train_policies = 2:2, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
+
+# ╔═╡ 72097ef2-0fcb-45c8-8537-253af364e35a
+const jal_vs_optimal_stats = display_soccer_statistics(soccer_jal_vs_optimal.policies..., "Minimax Q", "Optimal")
+
+# ╔═╡ cf478f51-42df-4f1f-a666-b470afe28767
+#=╠═╡
+soccer_jal_vs_optimal_viz = create_soccer_visualization(soccer_jal_vs_optimal.policies...)
+  ╠═╡ =#
+
+# ╔═╡ c110a6fc-e2a2-4d26-822e-6cfe799ee687
+#=╠═╡
+@bind jal_vs_optimal_step soccer_jal_vs_optimal_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ dc1b48f8-54ec-46e1-84b5-d5ac5c276390
+#=╠═╡
+soccer_jal_vs_optimal_viz.plot_function(jal_vs_optimal_step)
   ╠═╡ =#
 
 # ╔═╡ 0de23d03-fc68-4b8b-9d0a-468e40ceee9a
@@ -912,7 +1308,7 @@ PlutoUI = "~0.7.75"
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.12.2"
+julia_version = "1.12.3"
 manifest_format = "2.0"
 project_hash = "23981a06a3b41b40e40bf9ba709fc6f6e77421b6"
 
@@ -1417,7 +1813,7 @@ version = "2.8.3"
 [[deps.Pkg]]
 deps = ["Artifacts", "Dates", "Downloads", "FileWatching", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "Random", "SHA", "TOML", "Tar", "UUIDs", "p7zip_jll"]
 uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
-version = "1.12.0"
+version = "1.12.1"
 weakdeps = ["REPL"]
 
     [deps.Pkg.extensions]
@@ -1722,89 +2118,139 @@ version = "17.7.0+0"
 # ╠═844c29f5-fe4d-49cc-9dab-4b0ed6256a85
 # ╟─798386fc-f572-4cff-9222-00ab3452faae
 # ╠═3120f952-d848-4f37-b20c-922b5e897587
-# ╠═641255f6-19d8-401d-b522-7cf22577d87d
-# ╟─c3e5baea-2b49-4084-83c2-ec0a9402d297
-# ╟─a5901beb-eac1-4056-b0e0-1add182b061d
-# ╠═30870b6b-0c2f-481e-b1f6-0eebe6ddbdc4
+# ╠═69ed465f-7d0b-480b-90a2-186f51258b38
+# ╠═7c691c82-6de9-47ee-8b61-e3e239976ecc
+# ╟─96b067f8-5e7e-459a-9e3f-5640aa18680b
+# ╟─dceebec1-bf10-4389-9ef8-864ea59e92e8
+# ╟─25c1c075-b10a-4bc1-b113-39b684d8f939
+# ╟─164251a2-a42c-45d7-839f-bf06d082a971
+# ╟─939f23a4-d089-49ab-807c-ac107c3664d4
+# ╟─bd5e2748-4a79-4fab-8019-f6a733c9a653
+# ╠═1ed1be16-d0d0-446f-b096-5cc5e48e2ab5
+# ╠═fe4bd7bf-a73b-401c-8682-dc734122f5e8
 # ╠═e7cc25e9-b4fe-42a6-b07f-1940e7018068
 # ╟─af9ba099-95b3-40cb-b1fe-b6091cbe7cd2
 # ╟─bd7ce958-162b-419f-a177-6d1b21905e1c
-# ╠═e527160e-6d64-48d2-ab4d-abc67afebb97
-# ╠═9171a928-3c5a-4e3d-b758-89d060e4d26d
-# ╠═b53482aa-aa48-4846-ba9b-a9f7c2279fcd
-# ╠═54db08a2-b7c5-4311-8bca-fce64d665563
 # ╟─a01f5f05-788d-491e-9e2f-a047a11fbc03
 # ╠═7b07aa13-b39a-4874-9de4-037685001e24
+# ╟─e527160e-6d64-48d2-ab4d-abc67afebb97
+# ╠═54db08a2-b7c5-4311-8bca-fce64d665563
 # ╠═2eb915ed-16c2-4ea0-bf5f-5d1456249224
 # ╠═af0265b8-7fe9-499a-b675-32bf5ba76f64
 # ╟─fe077be2-467e-43a7-8729-3f3d48b8c91b
-# ╠═69ed465f-7d0b-480b-90a2-186f51258b38
 # ╠═439fff54-57e8-409e-994e-55e536d2ea0b
+# ╟─9a615e94-6be8-47f5-aa38-91088f3accc3
+# ╟─30d70205-a091-4155-87f5-d0ada3b597e0
 # ╠═74d539f4-defc-4e5e-a085-a30e96df75bf
 # ╟─036e8dbe-9acb-41bd-83eb-957da19fd86d
-# ╟─37c4bbe2-f78e-4ad1-a0fb-a00da11631f1
+# ╠═37c4bbe2-f78e-4ad1-a0fb-a00da11631f1
 # ╠═bfd2d1a0-7b3e-4fbf-9a29-22de88bbc08d
 # ╠═badfc16b-3b6e-471a-8e6e-d7ced4885770
-# ╠═84fdc00e-43d1-44c4-b479-d7be79c2d4cd
+# ╟─09e01730-c983-48bf-9e7a-a3d2ccc0a631
 # ╠═19d9e4b3-2c6b-4f33-a5be-32aa4a38513a
+# ╠═b22df2e2-d76d-4426-a704-42a291103603
+# ╟─b29a3234-8717-4b12-ac64-a79a0a74113a
+# ╟─46791653-7452-4afb-8639-ac753af9f249
+# ╟─84fdc00e-43d1-44c4-b479-d7be79c2d4cd
 # ╟─f31c6793-2bfb-4970-9b36-fbc95460be30
-# ╠═f9ad0938-cfb7-4370-ba02-da9ed335a951
 # ╠═95a3fcca-1f0c-49e9-9e9c-b1bea8cb76c4
 # ╠═b0ef6a1d-cb67-44a3-b8da-4f56930f85d7
-# ╠═9e02a457-df78-4f3a-b3f1-8ab9da44c5d1
+# ╟─2d8f6a70-1f8e-4ad6-a616-e725b5c0a377
 # ╠═e12a9ce4-1441-4863-9e31-19d04f512c61
-# ╠═91a4a1c8-4006-4c63-8cc1-bf665d0946ce
-# ╠═a86d8b48-6619-4f92-aa17-17e3c4a5f4f7
+# ╠═5906e0f9-eaf6-44f0-bfee-fdb4dd02f08b
+# ╟─9ea31e89-6279-456d-be11-e915686e0be4
+# ╟─a86d8b48-6619-4f92-aa17-17e3c4a5f4f7
+# ╠═a2f8445e-8b83-4903-b829-15b997e4c3fc
+# ╟─98f6ddc3-c534-4ba2-bce6-97b29e1428e4
+# ╠═a3fd5c60-105c-4c9d-909f-0a0af6c592c3
+# ╟─3ec640b5-9c7a-4973-b128-ec438d45f5b7
+# ╟─efcc1361-774a-4245-b034-090dc29ae131
 # ╠═1eaed379-6f4d-4634-aea6-a5b1941389d4
-# ╠═41b36c98-09a9-4951-a587-9d9e982559be
 # ╠═46060259-a774-4ff1-b415-27a5c6e9fa40
 # ╟─59461d31-4d11-4802-8e58-996a0fa7bf67
 # ╠═0bb09a54-4d4b-472d-86cc-133a9d73349c
+# ╟─b2872d0f-f780-449a-b17d-72d1506f90c0
+# ╠═f6ea001e-38f6-428c-a107-4ddcf817f470
+# ╟─bbdece04-95cd-4333-8244-eaf6f0be4b18
+# ╠═fb3e4d0f-bc6c-45a2-9491-225ef7b8f647
+# ╠═349e7689-24bd-467d-a7f0-73332fc93118
+# ╟─1e15c352-c684-49ff-bbff-3cfeac7b41f6
+# ╠═ffbd79f9-ac31-4ff4-ab8d-7c8603dfedf6
+# ╟─dfd93d6c-da3a-4f02-b8a4-6ebec3dc8284
+# ╟─989c2b5b-1d33-4292-b372-6c9a1f13be20
 # ╠═c4929e3a-c48f-4ba1-bf78-32f42fa7446d
+# ╟─9d9db616-81b3-462b-9400-3cef27107c56
+# ╠═e6f529bf-c71e-431a-90ae-884d59d12132
+# ╟─448ed962-b29f-445a-bb62-29c617a0b12e
 # ╠═feb35b37-c99f-40b7-b181-a86038a8ed92
 # ╟─f3566f79-350b-40ad-9817-af038202fd11
-# ╠═03178016-9014-45a8-a977-1e3c794d3db6
-# ╠═e6f529bf-c71e-431a-90ae-884d59d12132
+# ╟─03178016-9014-45a8-a977-1e3c794d3db6
 # ╠═eda86d7a-87ca-4f07-9ca9-e9045906da92
 # ╠═0fc4963b-2100-4b5d-a663-1c5306f311ca
 # ╠═879e7384-7786-43b2-a36f-229929e802cf
 # ╠═30ed524d-be39-41e2-adc4-86a3b155c3ed
-# ╠═140a1608-8105-4d9c-a839-12e94483eab4
-# ╠═d3a1b675-a218-4543-a501-df25b7255762
-# ╠═d6dc4e3c-faa7-426c-972e-dacf9bf6ba88
-# ╟─e071b761-5df2-4776-a959-2b8546027cd6
-# ╠═b1f4df52-2049-43e6-bc46-fe7e192e74ca
-# ╠═4b940a7f-21aa-44f3-9ecf-03e3ab0c2900
+# ╟─33669b7d-4609-4a11-a6d2-7569a582353e
+# ╟─7e0e10fe-2c5c-4c27-b21a-2568bebe8e6d
 # ╠═c3418786-fa47-4eb3-b239-3183ff920cc7
-# ╠═6143ba81-edfc-40dc-8380-515b73cca2b7
+# ╠═2278415f-f4e5-4ed9-94ad-761941039b97
 # ╠═91b0b90b-a1d7-42ac-a493-257dcc29bc6a
 # ╠═50a06568-bd54-4f0c-82a1-532050980940
 # ╟─97e10e56-9990-4b53-bf01-109eda72bb1c
 # ╠═d5351789-cd1a-4b20-9e96-8f3810b811f1
+# ╟─b84645f7-7ce2-498a-9db7-0da603e2904a
+# ╠═140a1608-8105-4d9c-a839-12e94483eab4
+# ╠═d3a1b675-a218-4543-a501-df25b7255762
+# ╠═4b940a7f-21aa-44f3-9ecf-03e3ab0c2900
+# ╠═d6dc4e3c-faa7-426c-972e-dacf9bf6ba88
+# ╟─e071b761-5df2-4776-a959-2b8546027cd6
+# ╠═b1f4df52-2049-43e6-bc46-fe7e192e74ca
 # ╠═32bc7859-7503-46c6-b8e0-2c3c22b2acc9
 # ╠═72097ef2-0fcb-45c8-8537-253af364e35a
+# ╠═cf478f51-42df-4f1f-a666-b470afe28767
+# ╠═c110a6fc-e2a2-4d26-822e-6cfe799ee687
+# ╠═dc1b48f8-54ec-46e1-84b5-d5ac5c276390
 # ╠═63af1889-a4a6-4d0e-a21f-21107c0efed2
-# ╟─bd291ecb-f529-46da-8fab-ae172535afa9
-# ╠═cd3bb7ba-3560-40a9-b166-7cb5cb23f316
-# ╠═5cfcb48f-59af-435c-81ea-170eb8a94c78
-# ╠═bf7a9be7-5e04-4059-b67e-01b30f929036
+# ╠═bd291ecb-f529-46da-8fab-ae172535afa9
 # ╠═7f486f74-6b68-4e03-9d09-858091d51784
+# ╠═cd3bb7ba-3560-40a9-b166-7cb5cb23f316
+# ╟─5cfcb48f-59af-435c-81ea-170eb8a94c78
+# ╠═bf7a9be7-5e04-4059-b67e-01b30f929036
 # ╟─5da718f5-c940-49a3-9c38-7af26a930439
 # ╟─52a51c78-4438-44b2-8315-9cffd8ba2581
+# ╠═9a80e476-bad5-4a8f-a8e2-0008a1e5d698
 # ╠═b053dc54-af90-463e-8510-38c33be32312
 # ╠═f338dda8-79b1-4c54-90ee-400e29b9d0b0
 # ╠═065ba539-ac92-4117-a1a3-d44d21237e34
+# ╠═c6ca307f-9753-4b0d-8fd8-ee05086fd5ed
+# ╠═2f8b643d-0dbb-47b3-8644-eaaa1e5410cf
+# ╠═b8de4e87-0d28-4731-84f9-b0c8e799b9a5
+# ╠═bfd96f31-f01f-4495-bde5-2ade7dcf2525
+# ╠═445b2fca-85cf-4937-a827-88453b96dba1
+# ╠═4d8eb87e-c43b-4b55-b632-79bca14b7759
+# ╠═cd97f119-5eeb-424c-b73a-86c525cd3787
+# ╠═ab01fea4-2da7-47c6-81e7-847ffeda8b34
+# ╠═6383ab5d-9d91-42f9-8a7f-427408ca356f
+# ╠═05aef224-961e-4ee9-84bb-6d6002c29e79
+# ╠═3c1bfb16-c9d9-4c88-8f0b-749526b0018e
+# ╠═6eccc26c-85a5-4ee4-90e7-874c9b670081
+# ╠═4ff02aaf-950e-463f-9c69-306a1ca5c4b0
+# ╠═d23092be-c8b8-4723-a435-83e3e2e30650
+# ╠═400aea40-3d2c-4696-b31c-3e0518341998
 # ╟─697e2312-c9a6-47b3-b13c-277ad4b0efb2
 # ╠═a1407418-2efb-4bee-9645-d029735d99f7
 # ╟─78815d3e-b1fa-4a60-b86d-07a5e40fea60
-# ╟─511e384b-697e-4397-8ec5-bf5449b9eee5
+# ╠═511e384b-697e-4397-8ec5-bf5449b9eee5
 # ╠═ee51c98e-444e-4a44-bb67-ea91f739d731
+# ╠═2b067fa4-3597-451b-8572-5ff877c68498
 # ╠═e3cc189b-80a8-44a9-b734-59eece616647
 # ╠═322d6682-05db-41cc-b6d4-42d772b051ac
 # ╠═d056d56d-3c46-4d3d-8789-e1ad4aa41bf1
 # ╠═bf9e5075-3595-42ca-9b73-0e16e608b946
 # ╠═7ab9b64b-6571-4cd4-bf9f-6ad00015dac8
+# ╠═50357183-c467-48c9-b1c7-05d7c2a5db55
 # ╠═ab3793ad-1069-4b77-a95a-4474fcd7c662
+# ╠═1168356f-fedf-4e53-a761-89f99f6b3812
+# ╠═7ba3754f-4a2d-4f87-a303-e37ea2376947
 # ╟─9d54ee68-d60c-11f0-87d1-3be62822741b
 # ╠═20a8c921-816f-4c5c-9341-b7749644d249
 # ╠═c3e732e2-2a10-4de3-800f-0378e0acd0dc
