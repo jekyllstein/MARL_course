@@ -1163,6 +1163,30 @@ soccer_env.ptf(soccer_env.initialize_state_index(), (3, 5))
 soccer_env_dist.ptf(soccer_env.initialize_state_index(), (3, 5))
   ╠═╡ =#
 
+# ╔═╡ 91c667a3-293d-44d7-9437-901274f27af9
+md"""
+## Non-Repeated Zero-Sum Games
+"""
+
+# ╔═╡ 2bfa6ee7-d580-4ea0-9551-28c34570dc1e
+function create_non_repeated_zero_sum_game(reward_matrix::Matrix{T}, agent_actions::NTuple{2, Vector{A}}) where {A, T<:Real}
+	(na1, na2) = size(reward_matrix)
+
+	state_transition_map = ones(Int64, na1, na2, 2) .* 2
+	reward_transition_map = zeros(Float32, na1, na2, 2)
+	for i_a1 in 1:na1
+		for i_a2 in 1:na2
+			reward_transition_map[i_a1, i_a2, 1] = reward_matrix[i_a1, i_a2]
+		end
+	end
+
+	ptf = TabularZeroSumGameTransition(state_transition_map, reward_transition_map)
+
+	initialize_state_index() = 1
+
+	TabularStochasticGame([:play, :term], agent_actions, ptf, initialize_state_index, BitVector([false, true]))
+end
+
 # ╔═╡ b53e1cfd-4f81-4e1e-bff0-3435d3fcd221
 md"""
 ## Rock-Paper-Scissors
@@ -1171,32 +1195,10 @@ md"""
 # ╔═╡ 769e5dc3-684e-4d36-a63f-0edb90331c59
 module RockPaperScissors
 	const actions = [:rock, :paper, :scissors]
-	abstract type game_state end
-	struct play_state <: game_state end
-	struct term_state <: game_state end
-	
 	const payout_matrix = [0f0 -1f0 1f0; 1f0 0f0 -1f0; -1f0 1f0 0f0]
 
-	import ..TabularZeroSumGameTransition
-	import ..TabularStochasticGame
-
-
-	#non-repeated game ends after every action selection
-	const states = [play_state(), term_state()]
-
-	state_transition_map = ones(Int64, 3, 3, 2) .* 2
-	reward_transition_map = zeros(Float32, 3, 3, 2)
-	for i_a1 in 1:3
-		for i_a2 in 1:3
-			reward_transition_map[i_a1, i_a2, 1] = payout_matrix[i_a1, i_a2]
-		end
-	end
-
-	initialize_state_index() = 1
-
-	ptf = TabularZeroSumGameTransition(state_transition_map, reward_transition_map)
-
-	non_repeated_game = TabularStochasticGame(states, NTuple{2, Vector{Symbol}}(copy(actions) for _ in 1:2), ptf, initialize_state_index, BitVector([false, true]))
+	import ..create_non_repeated_zero_sum_game
+	non_repeated_game = create_non_repeated_zero_sum_game(payout_matrix, ntuple(i -> actions, 2))
 end
 
 # ╔═╡ 5629f70c-b2cc-4a68-b5f0-9a11aef6dcbc
@@ -2176,6 +2178,8 @@ version = "17.7.0+0"
 # ╠═07f82b02-a479-4b1d-824d-7d18ced98ad3
 # ╠═db0fa811-6a74-4bf0-8806-58a4b513dd5e
 # ╠═90680746-e84b-4a63-8809-568f91cd0475
+# ╟─91c667a3-293d-44d7-9437-901274f27af9
+# ╠═2bfa6ee7-d580-4ea0-9551-28c34570dc1e
 # ╟─b53e1cfd-4f81-4e1e-bff0-3435d3fcd221
 # ╠═769e5dc3-684e-4d36-a63f-0edb90331c59
 # ╠═5629f70c-b2cc-4a68-b5f0-9a11aef6dcbc
