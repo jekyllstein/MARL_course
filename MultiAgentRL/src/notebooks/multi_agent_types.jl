@@ -835,6 +835,11 @@ Play Movie: $(@bind timestep_select CheckBox())
 """
   ╠═╡ =#
 
+# ╔═╡ b0eb099f-d55e-4f2b-aa61-5b7dce374056
+#=╠═╡
+runepisode(tab_5_3; π = value_iter.optimal_policy)
+  ╠═╡ =#
+
 # ╔═╡ 1fac0df2-9ce4-40d1-9296-a067906c2b01
 md"""
 #### Sarsa Solution
@@ -1158,6 +1163,45 @@ soccer_env.ptf(soccer_env.initialize_state_index(), (3, 5))
 soccer_env_dist.ptf(soccer_env.initialize_state_index(), (3, 5))
   ╠═╡ =#
 
+# ╔═╡ b53e1cfd-4f81-4e1e-bff0-3435d3fcd221
+md"""
+## Rock-Paper-Scissors
+"""
+
+# ╔═╡ 769e5dc3-684e-4d36-a63f-0edb90331c59
+module RockPaperScissors
+	const actions = [:rock, :paper, :scissors]
+	abstract type game_state end
+	struct play_state <: game_state end
+	struct term_state <: game_state end
+	
+	const payout_matrix = [0f0 -1f0 1f0; 1f0 0f0 -1f0; -1f0 1f0 0f0]
+
+	import ..TabularZeroSumGameTransition
+	import ..TabularStochasticGame
+
+
+	#non-repeated game ends after every action selection
+	const states = [play_state(), term_state()]
+
+	state_transition_map = ones(Int64, 3, 3, 2) .* 2
+	reward_transition_map = zeros(Float32, 3, 3, 2)
+	for i_a1 in 1:3
+		for i_a2 in 1:3
+			reward_transition_map[i_a1, i_a2, 1] = payout_matrix[i_a1, i_a2]
+		end
+	end
+
+	initialize_state_index() = 1
+
+	ptf = TabularZeroSumGameTransition(state_transition_map, reward_transition_map)
+
+	non_repeated_game = TabularStochasticGame(states, NTuple{2, Vector{Symbol}}(copy(actions) for _ in 1:2), ptf, initialize_state_index, BitVector([false, true]))
+end
+
+# ╔═╡ 5629f70c-b2cc-4a68-b5f0-9a11aef6dcbc
+RockPaperScissors.non_repeated_game.ptf(1, (3, 2))
+
 # ╔═╡ cc259b71-cbe0-4990-ba6f-b495f6b0a2b7
 md"""
 # Independing Learning Algorithms
@@ -1249,14 +1293,14 @@ end
 function make_random_policies(game::TabularStochasticGame{T, S, A, N, P, F}) where {T<:Real, S, A, P, F, N}
 	n_actions = Tuple(length(a) for a in game.agent_actions)
 	n_states = length(game.states)
-	Tuple(ones(T, n_actions[n], n_states) ./ n_actions[n] for n in 1:N)
+	NTuple{N, Matrix{T}}(ones(T, n_actions[n], n_states) ./ n_actions[n] for n in 1:N)
 end
 
 # ╔═╡ d95d9945-944a-497b-b07b-7b4d4eb1f01d
 function initialize_agent_action_values(game::TabularStochasticGame{T, S, A, N, P, F}, init_value::T) where {T<:Real, S, A, P, F<:Function, N}
-	n_actions = Tuple(length(a) for a in game.agent_actions)
+	n_actions = NTuple{N, Int64}(length(a) for a in game.agent_actions)
 	n_states = length(game.states)
-	Tuple(ones(T, n_actions[n], n_states) .* init_value for n in 1:N)
+	NTuple{N, Matrix{T}}(ones(T, n_actions[n], n_states) .* init_value for n in 1:N)
 end
 
 # ╔═╡ 3ab5ea43-f8d5-46ac-a407-fd7c9af50540
@@ -2113,6 +2157,7 @@ version = "17.7.0+0"
 # ╟─57d02e2c-4387-4345-bed3-504fafcd2a26
 # ╟─ac51b4e7-3097-420d-a2dc-0d939dea5456
 # ╠═fdcfd9d8-5c2e-4e6f-a408-7c530b1bc5ff
+# ╠═b0eb099f-d55e-4f2b-aa61-5b7dce374056
 # ╟─1fac0df2-9ce4-40d1-9296-a067906c2b01
 # ╠═e5ef0212-ff93-4e2b-a7c1-d7ff53cbb8aa
 # ╠═1d609b68-52a1-4459-a605-cae08785f306
@@ -2131,6 +2176,9 @@ version = "17.7.0+0"
 # ╠═07f82b02-a479-4b1d-824d-7d18ced98ad3
 # ╠═db0fa811-6a74-4bf0-8806-58a4b513dd5e
 # ╠═90680746-e84b-4a63-8809-568f91cd0475
+# ╟─b53e1cfd-4f81-4e1e-bff0-3435d3fcd221
+# ╠═769e5dc3-684e-4d36-a63f-0edb90331c59
+# ╠═5629f70c-b2cc-4a68-b5f0-9a11aef6dcbc
 # ╟─cc259b71-cbe0-4990-ba6f-b495f6b0a2b7
 # ╠═9b75d562-ac45-406a-867b-b6d2af5822ee
 # ╠═c755f0b1-2299-42b4-a28d-d53980260e79
