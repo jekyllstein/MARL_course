@@ -302,7 +302,7 @@ This method does not learn joint-action values and is an example of a single-age
 """
 
 # ╔═╡ c4929e3a-c48f-4ba1-bf78-32f42fa7446d
-const soccer_iql = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 10_000_000, α_decay = 0.99999954f0, ϵ = 0.2f0, save_history = true)
+const soccer_iql = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 1_000_000, α_decay = 0.9999954f0, ϵ = 0.2f0, save_history = true)
 
 # ╔═╡ e6f529bf-c71e-431a-90ae-884d59d12132
 const soccer_iql_stats = display_soccer_statistics(soccer_iql.policies..., "IQL", "IQL")
@@ -317,14 +317,14 @@ const iql_vs_random_stats = display_soccer_statistics(soccer_iql.policies[1], so
 
 # ╔═╡ 33669b7d-4609-4a11-a6d2-7569a582353e
 md"""
-### Policy Performance vs Optimal Opponents
+## Policy Performance vs Optimal Opponents
 
 Now that we have used different methods to calculate soccer policies, we can train opponents specifically against them to see if the policies are exploitable.  These opponents represent worst case scenarios in which a policy can be thoroughly studied by an adversary to tailor a solution designed to perform well against it ignoring all other possible opponents.  Fixing one player's startegy is turns the problem into an MDP which has an optimal solution for the other player that can be written as a deterministic strategy.
 """
 
 # ╔═╡ 7e0e10fe-2c5c-4c27-b21a-2568bebe8e6d
 md"""
-#### Random Policy
+### Random Policy
 
 Previously trained strategies had high success against the random policy, but training specifically against a random opponent can yield different results that achieve even higher expected rewards.
 """
@@ -332,14 +332,31 @@ Previously trained strategies had high success against the random policy, but tr
 # ╔═╡ c3418786-fa47-4eb3-b239-3183ff920cc7
 const soccer_random_vs_optimal = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 1_000_000, train_policies = 2:2, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
 
+# ╔═╡ 5ae3f279-3ec2-45dc-973d-2ffdbeb69890
+# ╠═╡ show_logs = false
+const π_opt_vs_random = value_iteration_v(TabularMDP(soccer_game, false, soccer_random_policy), 0.9f0).optimal_policy
+
 # ╔═╡ 91b0b90b-a1d7-42ac-a493-257dcc29bc6a
 const random_vs_optimal_stats = display_soccer_statistics(soccer_random_vs_optimal.policies..., "Random", "Optimal")
 
+# ╔═╡ 57d38973-1a03-4f8d-ab08-f4d5e3e76677
+const random_vs_optimal_stats2 = display_soccer_statistics(soccer_random_policy, π_opt_vs_random, "Random", "Optimal")
+
 # ╔═╡ b84645f7-7ce2-498a-9db7-0da603e2904a
 md"""
-#### Minimax Solution
+### Minimax Solution
 
 This strategy should be unexploitable meaning the best expected discounted reward one could hope to achieve against it is 0
+"""
+
+# ╔═╡ e743a5a5-a5f3-43dc-a153-f87ee931ec8c
+md"""
+### Minimax Q-learning
+"""
+
+# ╔═╡ d5c07738-ef3f-4234-ae9b-26f73bf710db
+md"""
+### Independent Q-learning
 """
 
 # ╔═╡ 63af1889-a4a6-4d0e-a21f-21107c0efed2
@@ -350,12 +367,33 @@ const soccer_iql_vs_optimal = independent_q_learning(soccer_game, 0.9f0; α = 1f
 plot(soccer_iql_vs_optimal.reward_history |> cumsum |> v -> v ./ (1:length(v)))
   ╠═╡ =#
 
+# ╔═╡ 93c37f74-19dd-4920-8203-fe3304b32612
+# ╠═╡ show_logs = false
+const π_opt_vs_iql = value_iteration_v(TabularMDP(soccer_game, false, soccer_iql.policies[1]), 0.9f0).optimal_policy
+
+# ╔═╡ e9630b92-6252-4d03-ab70-59902841ad65
+const iql_vs_optimal_stats2 = display_soccer_statistics(soccer_iql.policies[1], π_opt_vs_iql, "IQL", "Optimal")
+
 # ╔═╡ 7f486f74-6b68-4e03-9d09-858091d51784
 const iql_vs_optimal_stats = display_soccer_statistics(soccer_iql_vs_optimal.policies..., "IQL", "Optimal")
 
 # ╔═╡ b4380430-e223-44e9-96e7-e784de33020d
 md"""
 ## Joint-Action Learning with Agent Modeling
+
+With joint-action values, we can apply a game theory solution concept such as minimax to find the game value as well as the policies for all agents.  As an alternative, an agent can calculate its best response policy based on the other agents policies, and if that process converges then all of the policies will be in a game theory equilibrium solution.  Calculating the best response, however, depends on knowing something about the other agents' policies either exactly or approximately.  In particular, we need to compute the following:
+
+```math
+\text{BR}_i(\hat \pi_{-i}) = \mathrm{argmax}_{a_i \in A_i} \sum_{a_{-i} \in A_{-i}} \mathcal{R}_i(\left <a_i, a_{-i} \right >) \prod_{j \neq i} \hat \pi_j(a_j) \tag{6.15}
+```
+
+where ``\hat \pi_j`` is some estimate of the other agents' policies.  Practically, we can estimate the policies by averaging over observed actions:
+
+```math
+\hat \pi_j(a_j) = \frac{C(a_j)}{\sum_{a_j^\prime \in A_j} C(a_j^\prime)} \tag{6.14}
+```
+
+where ``C(a_j)`` is the number of times that agent ``j`` selected action ``a_j`` prior to the current episode.
 """
 
 # ╔═╡ 0ada2900-e35b-42c4-8e35-f357b57a2579
@@ -583,7 +621,7 @@ function jal_am!(q_ests::NTuple{N, Array{T, Np1}}, πs::NTuple{N, Matrix{T}}, ga
 			ϵ_step -= (ϵ - ϵ_min) / max_steps
 		else
 			α_step *= α_decay
-			ϵ_step *= ϵ_decay
+			ϵ_step = max(ϵ_min, ϵ_step * ϵ_decay)
 		end
 	end
 	
@@ -634,6 +672,13 @@ display_soccer_statistics(soccer_jal_am.policies[1], soccer_random_policy, "JAL-
 # ╔═╡ 7429193c-9bee-4031-8c4b-ccb1e8f6ad84
 const soccer_jal_am_vs_optimal = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 1_000_000, πs = (soccer_jal_am.policies[1], copy(soccer_random_policy)), train_policies = 2:2, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
 
+# ╔═╡ 1b84c0a8-5042-43df-b6d9-85d2e552f4f6
+# ╠═╡ show_logs = false
+const π_opt_vs_jal_am = value_iteration_v(TabularMDP(soccer_game, false, soccer_jal_am.policies[1]), 0.9f0).optimal_policy
+
+# ╔═╡ 48a84539-72f7-4d23-b2fd-e11270b49fe9
+const jal_am_vs_optimal_stats2 = display_soccer_statistics(soccer_jal_am.policies[1], π_opt_vs_jal_am, "JAL-AM", "Optimal")
+
 # ╔═╡ f1255c1c-6435-4eca-8d84-4b7f3a505ace
 display_soccer_statistics(soccer_jal_am_vs_optimal.policies..., "JAL-AM", "Optimal")
 
@@ -641,10 +686,10 @@ display_soccer_statistics(soccer_jal_am_vs_optimal.policies..., "JAL-AM", "Optim
 const lbf_game = LevelBasedForaging.make_5_3_environment()
 
 # ╔═╡ 1b671a28-ab2d-4a4f-ab4a-f6916daa34b6
-const lbf_jal_am_prep = jal_am(lbf_game, 0.99f0, typemax(Int64), 1_000_000; α = .01f0, ϵ = 1f0, save_history = true, use_linear_decay = true, α_min = 0.01f0, ϵ_min = 0.05f0)
+const lbf_jal_am_prep = jal_am(lbf_game, 0.99f0, typemax(Int64), 800_000; α = .01f0, ϵ = 1f0, save_history = true, use_linear_decay = true, α_min = 0.01f0, ϵ_min = 0.05f0)
 
 # ╔═╡ 8878e879-6e70-4d21-8eb9-c4e1898f0f48
-const lbf_jal_am = jal_am(lbf_game, 0.99f0, typemax(Int64), 1_000_000; α = .01f0, ϵ = 0.05f0, ϵ_decay = 1f0, save_history = true, q_ests = lbf_jal_am_prep.joint_action_values)
+const lbf_jal_am = jal_am(lbf_game, 0.99f0, typemax(Int64), 1_000_000; α = .01f0, ϵ = 0.05f0, save_history = true, q_ests = lbf_jal_am_prep.joint_action_values)
 
 # ╔═╡ 58cda3e3-9ba1-428b-bc80-b62951c4e193
 runepisode(lbf_game; πs = lbf_jal_am.policies)
@@ -655,7 +700,7 @@ md"""
 """
 
 # ╔═╡ 23db3972-76b7-4369-866b-d1f187ba7670
-const jal_am_rps = jal_am(RockPaperScissors.non_repeated_game, 1f0, 500, typemax(Int64); α = 0.05f0, ϵ = 0.05f0, save_policy_history = true)
+const jal_am_rps = jal_am(RockPaperScissors.non_repeated_game, 1f0, 500, typemax(Int64); α = 1f0, ϵ = 0.1f0, save_policy_history = true)
 
 # ╔═╡ 549e81d0-9dbe-4f89-9849-333d7bdc4d4f
 md"""
@@ -695,7 +740,7 @@ end
 
 # ╔═╡ 3efd8233-04da-4a6c-bbb7-ef7ed5c02057
 #joint action learning with game theory
-function wolf_phc!(q_ests::NTuple{N, Matrix{T}}, πs::NTuple{N, Matrix{T}}, π̄s::NTuple{N, Matrix{T}}, state_counts::Vector{T}, game::TabularStochasticGame{T, S, A, N, P, F}, γ::T, max_episodes::Integer, max_steps::Integer; α::T = one(T) / 10, l_l::T = one(T)/10, l_w::T = one(T) / 20, ϵ::T = one(T) / 10, α_decay::T = one(T), save_history::Bool = false) where {T<:Real, S, A, N, P<:AbstractTabularGameTransition{T, N}, F<:Function}
+function wolf_phc!(q_ests::NTuple{N, Matrix{T}}, πs::NTuple{N, Matrix{T}}, π̄s::NTuple{N, Matrix{T}}, state_counts::Vector{T}, game::TabularStochasticGame{T, S, A, N, P, F}, γ::T, max_episodes::Integer, max_steps::Integer; α::T = one(T) / 10, l_l::T = one(T)/10, l_w::T = one(T) / 20, ϵ::T = one(T) / 10, α_decay::T = one(T), save_history::Bool = false, save_policy_history::Bool = false) where {T<:Real, S, A, N, P<:AbstractTabularGameTransition{T, N}, F<:Function}
 	@assert l_l > l_w "The learning rate for losing of $l_l must be greater than the learning rate for winning of $l_w"
 	ep = 1
 	step = 1
@@ -704,6 +749,7 @@ function wolf_phc!(q_ests::NTuple{N, Matrix{T}}, πs::NTuple{N, Matrix{T}}, π̄
 
 	reward_history = initialize_reward_history(game.ptf)
 	episode_steps = Vector{Int64}()
+	policy_history = Vector{NTuple{N, Matrix{T}}}()
 
 	agent_policy_values = [zeros(T, length(game.agent_actions[n])) for n in 1:N]
 	agent_max_action = [BitVector(zeros(T, length(game.agent_actions[n]))) for n in 1:N]
@@ -794,7 +840,8 @@ function wolf_phc!(q_ests::NTuple{N, Matrix{T}}, πs::NTuple{N, Matrix{T}}, π̄
 				# @info "Not doing policy update in state $i_s because all $num_actions actions are maximizing"
 			# end
 		end
-	
+
+		save_policy_history && push!(policy_history, deepcopy(πs))
 
 		if terminated
 			i_s′ = game.initialize_state_index()
@@ -807,14 +854,14 @@ function wolf_phc!(q_ests::NTuple{N, Matrix{T}}, πs::NTuple{N, Matrix{T}}, π̄
 		α_step *= α_decay
 	end
 	
-	return (action_values = q_ests, policies = πs, reward_history = reward_history, episode_steps = episode_steps, avg_policies = π̄s, state_counts = state_counts)
+	return (action_values = q_ests, policies = πs, reward_history = reward_history, episode_steps = episode_steps, avg_policies = π̄s, state_counts = state_counts, policy_history = policy_history)
 end	
 
 # ╔═╡ 26f22c5b-fcb1-43c5-9b2e-efa74c79f235
 wolf_phc(game::TabularStochasticGame{T, S, A, N, P, F}, γ::T, max_episodes::Integer, max_steps::Integer; init_value::T = zero(T), q_ests::NTuple{N, Matrix{T}} = initialize_agent_action_values(game, init_value), πs::NTuple{N, Matrix{T}} = make_random_policies(game), π̄s::NTuple{N, Matrix{T}} = deepcopy(πs), state_counts::Vector{T} = zeros(T, length(game.states)), kwargs...) where {T<:Real, S, A, N, P<:AbstractTabularGameTransition{T, N}, F<:Function} = wolf_phc!(q_ests, πs, π̄s, state_counts, game, γ, max_episodes, max_steps; kwargs...)
 
 # ╔═╡ b802988a-48c7-4de8-b37b-95b63884f79f
-const soccer_wolf_phc = wolf_phc(soccer_game, 0.9f0, typemax(Int64), 1_000_000; α = .5f0, α_decay = 0.9999954f0, ϵ = 0.2f0, save_history = true, l_w = 0.01f0, l_l = 0.02f0)
+const soccer_wolf_phc = wolf_phc(soccer_game, 0.9f0, typemax(Int64), 1_000_000; α = 1f0, α_decay = 0.9999954f0, ϵ = 0.2f0, save_history = true, l_w = 0.01f0, l_l = 0.02f0)
 
 # ╔═╡ 78e0333b-90c1-40c8-9c03-17759da296c5
 display_soccer_statistics(soccer_wolf_phc.policies..., "WoLF-PHC", "WoLF-PHC")
@@ -824,6 +871,13 @@ display_soccer_statistics(soccer_wolf_phc.policies[1], soccer_random_policy, "Wo
 
 # ╔═╡ 4e4a131b-b824-491b-a0cb-012d5dd1afe6
 const soccer_wolf_phc_vs_optimal = independent_q_learning(soccer_game, 0.9f0; α = .5f0, max_steps = 1_000_000, πs = (soccer_wolf_phc.policies[1], copy(soccer_random_policy)), train_policies = 2:2, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
+
+# ╔═╡ e38af890-82e6-4370-b2ba-db245996cbfc
+# ╠═╡ show_logs = false
+const π_opt_vs_wolf_phc= value_iteration_v(TabularMDP(soccer_game, false, soccer_wolf_phc.policies[1]), 0.9f0).optimal_policy
+
+# ╔═╡ 1f3665a0-adc7-478d-b047-8e8028a0a061
+display_soccer_statistics(soccer_wolf_phc.policies[1], π_opt_vs_wolf_phc, "WoLF-PHC", "Optimal")
 
 # ╔═╡ ab8d5a68-4ea8-4bec-8c2a-3f0727d05943
 display_soccer_statistics(soccer_wolf_phc_vs_optimal.policies..., "WoLF-PHC", "Optimal")
@@ -838,7 +892,7 @@ runepisode(lbf_game; πs = lbf_wolf_phc.policies)
 #add a way to save the action probability history for games
 
 # ╔═╡ 2cd6aa77-6828-44ef-b7d9-4f6cfc50e880
-const rps_wolf_phc = wolf_phc(RockPaperScissors.non_repeated_game, 1f0, typemax(Int64), 200_000; α = .01f0, ϵ = .2f0, save_history = true, l_w = 0.000001f0, l_l = .000008f0)
+const rps_wolf_phc = wolf_phc(RockPaperScissors.non_repeated_game, 1f0, typemax(Int64), 100_000; α = .1f0, ϵ = .1f0, save_history = true, l_w = 0.00004f0, l_l = .00008f0, save_policy_history = true, πs = ([0.5f0 0.5f0; 0.35f0 0.35f0; .15f0 .15f0], [0.5f0 0.5f0; 0.35f0 0.35f0; .15f0 .15f0]))
 
 # ╔═╡ 5da718f5-c940-49a3-9c38-7af26a930439
 md"""
@@ -1143,7 +1197,7 @@ md"""
 
 # ╔═╡ 62d8a4f9-fd25-449c-acd0-7f8e34561c31
 #=╠═╡
-function plot_rps_policy_history(policy_history::Vector{NTuple{2, Matrix{Float32}}})
+function plot_rps_policy_history(policy_history::AbstractVector{NTuple{2, Matrix{Float32}}})
 	l = length(policy_history)
 	r1 = [a[1][1, 1] for a in view(policy_history, 1:2:l)]
 	p1 = [a[1][2, 1] for a in view(policy_history, 1:2:l)]
@@ -1168,6 +1222,11 @@ end
 # ╔═╡ 5eb49614-6762-4544-9bf1-bcfa3af62646
 #=╠═╡
 plot_rps_policy_history(jal_am_rps.policy_history)
+  ╠═╡ =#
+
+# ╔═╡ 36dfd0bf-b73c-472e-ad18-79383c10993c
+#=╠═╡
+plot_rps_policy_history(view(rps_wolf_phc.policy_history, 1:500:60_000))
   ╠═╡ =#
 
 # ╔═╡ 9d54ee68-d60c-11f0-87d1-3be62822741b
@@ -1357,6 +1416,13 @@ plot(soccer_minimax_vs_optimal.reward_history |> cumsum |> v -> v ./ (1:length(v
 
 # ╔═╡ 4b940a7f-21aa-44f3-9ecf-03e3ab0c2900
 const minimax_vs_optimal_stats = display_soccer_statistics(soccer_minimax_vs_optimal.policies..., "Minimax", "Optimal")
+
+# ╔═╡ c0e75a55-c354-443e-949e-d11c7f4100ed
+# ╠═╡ show_logs = false
+const π_opt_vs_minimax = value_iteration_v(TabularMDP(soccer_game, false, soccer_value_iter.policies[1]), 0.9f0).optimal_policy
+
+# ╔═╡ a07e2a13-a9d5-4558-8f63-b15a73838b1e
+display_soccer_statistics(soccer_value_iter.policies[1], π_opt_vs_minimax, "Minimax", "Optimal")
 
 # ╔═╡ ce4b2377-45e2-421d-b457-c40aaabee4e4
 display_soccer_statistics(soccer_jal_am.policies[1], soccer_value_iter.policies[2], "JAL-AM", "Minimax")
@@ -1624,7 +1690,7 @@ random_vs_optimal_viz.plot_function(random_vs_optimal_step)
 
 # ╔═╡ d6dc4e3c-faa7-426c-972e-dacf9bf6ba88
 #=╠═╡
-minimax_vs_optimal_viz = create_soccer_visualization(soccer_minimax_vs_optimal.policies..., soccer_minimax_vs_optimal.value_estimates)
+minimax_vs_optimal_viz = create_soccer_visualization(soccer_value_iter.policies[1], π_opt_vs_minimax, soccer_minimax_vs_optimal.value_estimates)
   ╠═╡ =#
 
 # ╔═╡ e071b761-5df2-4776-a959-2b8546027cd6
@@ -1813,9 +1879,16 @@ const soccer_jal_vs_optimal = independent_q_learning(soccer_game, 0.9f0; α = 1f
 # ╔═╡ 72097ef2-0fcb-45c8-8537-253af364e35a
 const jal_vs_optimal_stats = display_soccer_statistics(soccer_jal_vs_optimal.policies..., "Minimax Q", "Optimal")
 
+# ╔═╡ fb9eaf3f-d7ad-403a-98fc-64098df10737
+# ╠═╡ show_logs = false
+const π_opt_vs_jal = value_iteration_v(TabularMDP(soccer_game, false, soccer_jal.policies[1]), 0.9f0).optimal_policy
+
+# ╔═╡ f5d89ff7-0fba-49d5-b7a3-eb9a0bc84f8d
+const jal_vs_optimal_stats2 = display_soccer_statistics(soccer_jal.policies[1], π_opt_vs_jal, "Minimax Q", "Optimal")
+
 # ╔═╡ cf478f51-42df-4f1f-a666-b470afe28767
 #=╠═╡
-soccer_jal_vs_optimal_viz = create_soccer_visualization(soccer_jal_vs_optimal.policies...)
+soccer_jal_vs_optimal_viz = create_soccer_visualization(soccer_jal.policies[1], π_opt_vs_jal)
   ╠═╡ =#
 
 # ╔═╡ c110a6fc-e2a2-4d26-822e-6cfe799ee687
@@ -1825,7 +1898,7 @@ soccer_jal_vs_optimal_viz = create_soccer_visualization(soccer_jal_vs_optimal.po
 
 # ╔═╡ dc1b48f8-54ec-46e1-84b5-d5ac5c276390
 #=╠═╡
-soccer_jal_vs_optimal_viz.plot_function(jal_vs_optimal_step)
+soccer_jal_vs_optimal_viz.plot_function(jal_vs_optimal_step; show_minimax=true)
   ╠═╡ =#
 
 # ╔═╡ 0de23d03-fc68-4b8b-9d0a-468e40ceee9a
@@ -2759,24 +2832,34 @@ version = "17.7.0+0"
 # ╟─7e0e10fe-2c5c-4c27-b21a-2568bebe8e6d
 # ╠═c3418786-fa47-4eb3-b239-3183ff920cc7
 # ╠═2278415f-f4e5-4ed9-94ad-761941039b97
+# ╠═5ae3f279-3ec2-45dc-973d-2ffdbeb69890
 # ╠═91b0b90b-a1d7-42ac-a493-257dcc29bc6a
+# ╠═57d38973-1a03-4f8d-ab08-f4d5e3e76677
 # ╠═50a06568-bd54-4f0c-82a1-532050980940
 # ╟─97e10e56-9990-4b53-bf01-109eda72bb1c
 # ╠═d5351789-cd1a-4b20-9e96-8f3810b811f1
 # ╟─b84645f7-7ce2-498a-9db7-0da603e2904a
 # ╠═140a1608-8105-4d9c-a839-12e94483eab4
 # ╠═d3a1b675-a218-4543-a501-df25b7255762
+# ╠═c0e75a55-c354-443e-949e-d11c7f4100ed
+# ╠═a07e2a13-a9d5-4558-8f63-b15a73838b1e
 # ╠═4b940a7f-21aa-44f3-9ecf-03e3ab0c2900
 # ╠═d6dc4e3c-faa7-426c-972e-dacf9bf6ba88
 # ╟─e071b761-5df2-4776-a959-2b8546027cd6
 # ╠═b1f4df52-2049-43e6-bc46-fe7e192e74ca
+# ╟─e743a5a5-a5f3-43dc-a153-f87ee931ec8c
 # ╠═32bc7859-7503-46c6-b8e0-2c3c22b2acc9
+# ╠═fb9eaf3f-d7ad-403a-98fc-64098df10737
+# ╠═f5d89ff7-0fba-49d5-b7a3-eb9a0bc84f8d
 # ╠═72097ef2-0fcb-45c8-8537-253af364e35a
 # ╠═cf478f51-42df-4f1f-a666-b470afe28767
 # ╟─c110a6fc-e2a2-4d26-822e-6cfe799ee687
 # ╠═dc1b48f8-54ec-46e1-84b5-d5ac5c276390
+# ╟─d5c07738-ef3f-4234-ae9b-26f73bf710db
 # ╠═63af1889-a4a6-4d0e-a21f-21107c0efed2
 # ╠═bd291ecb-f529-46da-8fab-ae172535afa9
+# ╠═93c37f74-19dd-4920-8203-fe3304b32612
+# ╠═e9630b92-6252-4d03-ab70-59902841ad65
 # ╠═7f486f74-6b68-4e03-9d09-858091d51784
 # ╠═cd3bb7ba-3560-40a9-b166-7cb5cb23f316
 # ╟─5cfcb48f-59af-435c-81ea-170eb8a94c78
@@ -2801,6 +2884,8 @@ version = "17.7.0+0"
 # ╠═026c1c3e-8ae2-4acb-8f2e-286187a4e408
 # ╠═7429193c-9bee-4031-8c4b-ccb1e8f6ad84
 # ╠═07af85fb-cf84-4592-aeeb-49b8c37b5794
+# ╠═1b84c0a8-5042-43df-b6d9-85d2e552f4f6
+# ╠═48a84539-72f7-4d23-b2fd-e11270b49fe9
 # ╠═f1255c1c-6435-4eca-8d84-4b7f3a505ace
 # ╠═f3a8c840-8c0c-4bcd-a541-2801cddd529f
 # ╠═1b671a28-ab2d-4a4f-ab4a-f6916daa34b6
@@ -2809,7 +2894,7 @@ version = "17.7.0+0"
 # ╠═58cda3e3-9ba1-428b-bc80-b62951c4e193
 # ╟─8adec11d-e873-49c7-8a49-3e584cf76720
 # ╠═23db3972-76b7-4369-866b-d1f187ba7670
-# ╟─5eb49614-6762-4544-9bf1-bcfa3af62646
+# ╠═5eb49614-6762-4544-9bf1-bcfa3af62646
 # ╟─549e81d0-9dbe-4f89-9849-333d7bdc4d4f
 # ╟─3ab9580f-0b52-4b96-a386-91783e598798
 # ╠═abd8af73-c03d-468f-8bc3-5c5b5caaae44
@@ -2823,12 +2908,15 @@ version = "17.7.0+0"
 # ╠═9515108e-2ab2-44f6-930a-05723cc4a07d
 # ╠═4e4a131b-b824-491b-a0cb-012d5dd1afe6
 # ╠═882a36b8-89ef-4d8d-ac57-0f060b670bba
+# ╠═e38af890-82e6-4370-b2ba-db245996cbfc
+# ╠═1f3665a0-adc7-478d-b047-8e8028a0a061
 # ╠═ab8d5a68-4ea8-4bec-8c2a-3f0727d05943
 # ╠═a74c712b-5458-4d87-bdba-159617d30742
 # ╠═0e195ca4-9077-441e-8349-06b8824dce70
 # ╠═42a04270-323d-4d45-b025-d77694b5b982
 # ╠═4556459e-54d8-4b3c-9a22-96d0985176f0
 # ╠═2cd6aa77-6828-44ef-b7d9-4f6cfc50e880
+# ╠═36dfd0bf-b73c-472e-ad18-79383c10993c
 # ╟─5da718f5-c940-49a3-9c38-7af26a930439
 # ╟─52a51c78-4438-44b2-8315-9cffd8ba2581
 # ╠═9a80e476-bad5-4a8f-a8e2-0008a1e5d698
