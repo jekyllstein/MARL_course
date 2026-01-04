@@ -313,6 +313,33 @@ function TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, N,
 	TabularMDP(stochastic_game.states, agent_actions[agent_index], ptf, stochastic_game.initialize_state_index, stochastic_game.terminal_states; state_index = stochastic_game.state_index)
 end
 
+# ╔═╡ 77719b6d-893e-4011-b676-cbd322d3a835
+TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, 2, P, F}, player1::Bool, π_other::M) where {T<:Real, S, A, P<:TabularGameTransitionSampler{T, 2}, F<:Function, T2<:Real, M <: AbstractMatrix{T2}} = TabularMDP(stochastic_game, player1*1 + !player1*2, (π_other,))
+
+# ╔═╡ 727885f8-ad7a-44b4-845d-9a9d8aebdb87
+begin
+	function check_policies(ptf::Union{TabularGameTransition{T, N, Np1, ST, RT}, TabularCommonRewardGameTransition{T, N, Np1, ST, RT}}, π_others::NTuple{Nm1, M}) where {T<:Real, N, Np1, ST, RT, Nm1, T2<:Real, M <:AbstractMatrix{T2}}
+		@assert Nm1 == (N-1) "There must be $(N-1) policies for the other agents"
+	end
+
+	check_policies(ptf::TabularZeroSumGameTransition{T, ST, RT}, π_others::NTuple{1, M}) where {T<:Real, ST, RT, T2<:Real, M <:AbstractMatrix{T2}} = nothing
+		
+	check_policies(ptf::TabularZeroSumGameTransition{T, ST, RT}, π_others::NTuple{Nm1, M}) where {T<:Real, ST, RT, T2<:Real, Nm1, M <:AbstractMatrix{T2}} =  error("There must be 1 policy for the other agent")
+end	
+
+# ╔═╡ b0b41d5e-4944-4fc8-b108-175c559e3d63
+begin
+	get_num_states(ptf::Union{TabularGameTransition{T, N, Np1, ST, RT}, TabularCommonRewardGameTransition{T, N, Np1, ST, RT}}) where {T<:Real, N, Np1, ST, RT} = size(ptf.state_transition_map, Np1)
+
+	get_num_states(ptf::TabularZeroSumGameTransition{T, ST, RT}) where {T<:Real, ST, RT} = size(ptf.state_transition_map, 3)
+end
+
+# ╔═╡ 9908b24b-77c4-4ece-99b5-337dc6725a13
+get_other_inds(ptf::AbstractTabularGameTransition{T, N}, agent_index::Integer) where {T<:Real, N} = (setdiff(1:N, agent_index), N+1)
+
+# ╔═╡ fab57783-bcf7-4fd8-a5d1-5824db9226e4
+TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, 2, P, F}, player1::Bool, π_other::M) where {T<:Real, S, A, P<:Union{TabularGameTransition, TabularZeroSumGameTransition, TabularCommonRewardGameTransition}, F<:Function, T2<:Real, M <: AbstractMatrix{T2}} = TabularMDP(stochastic_game, player1*1 + !player1*2, (π_other,))
+
 # ╔═╡ 3f9d927e-4158-4531-b31f-56aae3ac0c7b
 #convert a tabular stochastic game into a tabular mdp for agent i using fixed policies for the other agents
 function TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, 2, P, F}, player1::Bool, π_other::M) where {T<:Real, S, A, P<:TabularZeroSumGameTransitionSampler{T}, F<:Function, T2<:Real, M <: AbstractMatrix{T2}}
@@ -320,6 +347,7 @@ function TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, 2,
 	inds = player1 ? (1, 2) : (2, 1)
 	form_joint_action(a::Tuple{Int64, Int64}) = (a[inds[1]], a[inds[2]])  
 	c = player1 ? one(T) : -1*one(T)
+	agent_index = player1 ? 1 : 2
 	function step(i_s::Integer, i_a::Integer)
 		i_a_other = sample_action(π_other, i_s)
 		a = form_joint_action((i_a, i_a_other))
@@ -331,20 +359,6 @@ function TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, 2,
 	
 	TabularMDP(stochastic_game.states, agent_actions[agent_index], ptf, stochastic_game.initialize_state_index, stochastic_game.terminal_states; state_index = stochastic_game.state_index)
 end
-
-# ╔═╡ 862ff813-18fd-4dd5-86f0-b5cc8e9a021d
-#add this conversion for distribution transitions as well
-
-# ╔═╡ 776a9ef9-8477-449f-b195-2cc5d7c93749
-# ╠═╡ skip_as_script = true
-#=╠═╡
-const test_agent_actions = [Tuple(1:6) for i in 1:3]
-  ╠═╡ =#
-
-# ╔═╡ 45668f60-2dbc-48d4-9903-111b80665845
-#=╠═╡
-const test_inds = collect(CartesianIndices(Array{Int64, length(test_agent_actions)}(undef, Tuple(length(a) for a in test_agent_actions)...)))[:]
-  ╠═╡ =#
 
 # ╔═╡ 04b35d98-e60f-4e3c-b89d-891f7139b5ec
 md"""
@@ -801,22 +815,12 @@ md"""
 Using the sum of agent rewards as the scalar transformation, we can convert this multi-agent stochastic game into a Tabular MDP
 """
 
-# ╔═╡ dac84639-2388-4ee8-9372-aae518a37f17
-#=╠═╡
-const tab_5_3 = TabularMDP(ex_5_3, sum)
-  ╠═╡ =#
-
 # ╔═╡ c46aa7de-2b71-4abe-b420-17802f027ab4
 md"""
 #### Value Iteration Solution
 
 With a tabular MDP, we can apply an exactly solution technique such as value iteration.
 """
-
-# ╔═╡ 83583ca7-bd96-4589-bbe0-e967849c3bd3
-#=╠═╡
-const value_iter = value_iteration_v(tab_5_3, 0.99f0)
-  ╠═╡ =#
 
 # ╔═╡ aa1faa8e-1e85-4ce1-91c2-adacac30e80c
 md"""
@@ -835,52 +839,12 @@ Play Movie: $(@bind timestep_select CheckBox())
 """
   ╠═╡ =#
 
-# ╔═╡ b0eb099f-d55e-4f2b-aa61-5b7dce374056
-#=╠═╡
-runepisode(tab_5_3; π = value_iter.optimal_policy)
-  ╠═╡ =#
-
 # ╔═╡ 1fac0df2-9ce4-40d1-9296-a067906c2b01
 md"""
 #### Sarsa Solution
 
 We can also apply estimation techniques from reinforcement learning that rely on environment sampling.  Below an example of using sarsa and its variations.
 """
-
-# ╔═╡ e5ef0212-ff93-4e2b-a7c1-d7ff53cbb8aa
-#=╠═╡
-const lbf_sarsa = q_learning(tab_5_3, 0.99f0; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
-  ╠═╡ =#
-
-# ╔═╡ b6df5773-94cd-488b-bb14-4713314a4575
-#=╠═╡
-function get_lbf_sarsa_statistics(algo; nruns = Base.Threads.nthreads(), kwargs...)
-	1:nruns |> Map() do i
-		output = algo(tab_5_3, 0.99f0; kwargs..., save_history = true)
-		output.reward_history
-	end |> foldxt((a, b) -> a .+ b) |> v -> v ./ nruns
-end
-  ╠═╡ =#
-
-# ╔═╡ 1d609b68-52a1-4459-a605-cae08785f306
-#=╠═╡
-const lbf_sarsa_avg = get_lbf_sarsa_statistics(sarsa; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
-  ╠═╡ =#
-
-# ╔═╡ 7201de00-04d0-4eea-b814-08fe26fbabb5
-#=╠═╡
-const lbf_expected_sarsa_avg = get_lbf_sarsa_statistics(expected_sarsa; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.1f0, save_history = true)
-  ╠═╡ =#
-
-# ╔═╡ 2d15d9d3-4fec-498f-a1c0-9ae3c10f2d2f
-#=╠═╡
-const lbf_q_learning_avg = get_lbf_sarsa_statistics(q_learning; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
-  ╠═╡ =#
-
-# ╔═╡ 09474fdf-df26-4e33-8f29-fc6ad9b85368
-#=╠═╡
-const lbf_double_q_learning_avg = get_lbf_sarsa_statistics(double_q_learning; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
-  ╠═╡ =#
 
 # ╔═╡ 5a291aa8-5aeb-4427-aff2-c30a154c435d
 #=╠═╡
@@ -903,21 +867,6 @@ function plot_episode_rewards(vs::Vector{Vector{T}}, names::Vector{String}, n::I
 	for (j, v) in enumerate(vs)]
 	plot(traces, Layout(xaxis_title = "Environment time steps", yaxis_title = "Average Steps Over Last $n Episodes", yaxis_type = "log"))
 end
-  ╠═╡ =#
-
-# ╔═╡ 791a661b-77fd-4ddd-8b82-56c64dcc5c22
-#=╠═╡
-const value_iter_episode = runepisode(tab_5_3; π = value_iter.optimal_policy)
-  ╠═╡ =#
-
-# ╔═╡ a113a20e-a599-4dbb-87a0-f943245d75ce
-#=╠═╡
-@bind timestep Slider(1:length(value_iter_episode[1])+1)
-  ╠═╡ =#
-
-# ╔═╡ 57d02e2c-4387-4345-bed3-504fafcd2a26
-#=╠═╡
-@bind movie_timestep Clock(;max_value = length(value_iter_episode[1])+1, repeat = true, interval = 0.4)
   ╠═╡ =#
 
 # ╔═╡ 775fd220-532d-49ba-968f-20781c5d6708
@@ -1219,6 +1168,159 @@ begin
 	get_game_reward(::AbstractTabularCommonRewardGameTransition{T}, r::T, ::Integer) where T<:Real = r
 end
 
+# ╔═╡ eb6189fd-68e0-435f-b736-dab754522ea9
+begin
+	function update_transitions!(state_transition_map::Matrix{SparseVector{T, Int64}}, reward_transitions::Matrix{Dict{Int64, T}}, ptf::Union{TabularGameStochasticTransition{T, N, Np1}, TabularZeroSumGameStochasticTransition{T}, TabularCommonRewardGameStochasticTransition{T, N}}, cart_ind::CartesianIndex, i_a::Integer, i_s::Integer, p::T, agent_index::Integer) where {T<:Real, N, Np1}
+		probs = ptf.state_transition_map[cart_ind]
+		agent_rewards = ptf.reward_transition_map[cart_ind]
+
+		for i in eachindex(probs.nzind)
+			i_s′ = probs.nzind[i]
+			r = get_game_reward(ptf, agent_rewards[i], agent_index)
+			p2 = probs.nzval[i]
+			state_transition_map[i_a, i_s][i_s′] += p*p2
+			
+			if !haskey(reward_transitions[i_a, i_s], i_s′)
+				reward_transitions[i_a, i_s][i_s′] = p*p2*r
+			else
+				reward_transitions[i_a, i_s][i_s′] += p*p2*r
+			end
+		end
+	end
+
+	function update_transitions!(state_transition_map::Matrix{SparseVector{T, Int64}}, reward_transitions::Matrix{Dict{Int64, T}}, ptf::Union{TabularGameDeterministicTransition{T, N, Np1}, TabularZeroSumGameDeterministicTransition{T}, TabularCommonRewardGameDeterministicTransition{T, N}}, cart_ind::CartesianIndex, i_a::Integer, i_s::Integer, p::T, agent_index::Integer) where {T<:Real, N, Np1}
+		i_s′ = ptf.state_transition_map[cart_ind]
+		r = get_game_reward(ptf, ptf.reward_transition_map[cart_ind], agent_index)
+		state_transition_map[i_a, i_s][i_s′] += p
+		if !haskey(reward_transitions[i_a, i_s], i_s′)
+			reward_transitions[i_a, i_s][i_s′] = p*r
+		else
+			reward_transitions[i_a, i_s][i_s′] += p*r
+		end
+	end
+end
+
+# ╔═╡ 475e855e-ca4b-4466-ba8b-ca0edefb4f82
+#convert a tabular stochastic game into a tabular mdp for agent i using fixed policies for the other agents
+function TabularRL.TabularStochasticTransition(ptf::Union{TabularGameTransition{T, N, Np1, ST, RT}, TabularZeroSumGameTransition{T, ST, RT}, TabularCommonRewardGameTransition{T, N, Np1, ST, RT}}, agent_index::Integer, π_others::NTuple{Nm1, M}) where {T<:Real, N, Np1, Nm1, T2<:Real, M <: AbstractMatrix{T2}, ST <: Union{Int64, SparseVector{T, Int64}}, RT <: Union{T, Vector{T}}}
+	check_policies(ptf, π_others)
+	
+	num_actions = size(ptf.state_transition_map, agent_index)
+	num_states = get_num_states(ptf)
+
+	(other_inds, state_index) = get_other_inds(ptf, agent_index)
+	
+	state_transition_map = Matrix{SparseVector{T, Int64}}(undef, num_actions, num_states)
+	reward_transitions = Matrix{Dict{Int64, T}}(undef, num_actions, num_states)
+	reward_transition_map = Matrix{Vector{T}}(undef, num_actions, num_states)
+	for i in eachindex(state_transition_map)
+		state_transition_map[i] = SparseVector{T, Int64}(zeros(T, num_states))
+		reward_transitions[i] = Dict{Int64, T}()
+		reward_transition_map[i] = Vector{T}()
+	end
+
+	cart_inds = CartesianIndices(ptf.state_transition_map)
+	
+	for cart_ind in cart_inds
+		i_s = cart_ind[state_index]
+		i_a = cart_ind[agent_index]
+
+		p = one(T)
+		for (i, n) in enumerate(other_inds)
+			i_a_other = cart_ind[n]
+			p *= π_others[i][i_a_other, i_s]
+		end
+
+		update_transitions!(state_transition_map, reward_transitions, ptf, cart_ind, i_a, i_s, p, agent_index)
+	end
+
+	for i_s in 1:num_states
+		for i_a in 1:num_actions
+			for i_s′ in state_transition_map[i_a, i_s].nzind
+				ptot = state_transition_map[i_a, i_s][i_s′]
+				r_avg = reward_transitions[i_a, i_s][i_s′] / ptot
+				push!(reward_transition_map[i_a, i_s], r_avg)
+			end
+		end
+	end
+
+	TabularTransitionDistribution(state_transition_map, reward_transition_map)
+end
+
+# ╔═╡ 89b1cb3b-bf58-4ca3-a08d-736ee2af2b0f
+function TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, N, P, F}, agent_index::Integer, π_others::NTuple{Nm1, M}) where {T<:Real, S, A, N, P<:Union{TabularGameTransition, TabularZeroSumGameTransition, TabularCommonRewardGameTransition}, F<:Function, Nm1, T2<:Real, M <: AbstractMatrix{T2}}
+	@assert Nm1 == (N - 1) "There must be $(N-1) policies for the other agents"
+	agent_actions = stochastic_game.agent_actions
+
+	ptf = TabularStochasticTransition(stochastic_game.ptf, agent_index, π_others)
+	TabularMDP(stochastic_game.states, agent_actions[agent_index], ptf, stochastic_game.initialize_state_index, stochastic_game.terminal_states; state_index = stochastic_game.state_index)
+end
+
+# ╔═╡ dac84639-2388-4ee8-9372-aae518a37f17
+#=╠═╡
+const tab_5_3 = TabularMDP(ex_5_3, sum)
+  ╠═╡ =#
+
+# ╔═╡ 83583ca7-bd96-4589-bbe0-e967849c3bd3
+#=╠═╡
+const value_iter = value_iteration_v(tab_5_3, 0.99f0)
+  ╠═╡ =#
+
+# ╔═╡ b0eb099f-d55e-4f2b-aa61-5b7dce374056
+#=╠═╡
+runepisode(tab_5_3; π = value_iter.optimal_policy)
+  ╠═╡ =#
+
+# ╔═╡ e5ef0212-ff93-4e2b-a7c1-d7ff53cbb8aa
+#=╠═╡
+const lbf_sarsa = q_learning(tab_5_3, 0.99f0; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
+  ╠═╡ =#
+
+# ╔═╡ b6df5773-94cd-488b-bb14-4713314a4575
+#=╠═╡
+function get_lbf_sarsa_statistics(algo; nruns = Base.Threads.nthreads(), kwargs...)
+	1:nruns |> Map() do i
+		output = algo(tab_5_3, 0.99f0; kwargs..., save_history = true)
+		output.reward_history
+	end |> foldxt((a, b) -> a .+ b) |> v -> v ./ nruns
+end
+  ╠═╡ =#
+
+# ╔═╡ 1d609b68-52a1-4459-a605-cae08785f306
+#=╠═╡
+const lbf_sarsa_avg = get_lbf_sarsa_statistics(sarsa; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
+  ╠═╡ =#
+
+# ╔═╡ 7201de00-04d0-4eea-b814-08fe26fbabb5
+#=╠═╡
+const lbf_expected_sarsa_avg = get_lbf_sarsa_statistics(expected_sarsa; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.1f0, save_history = true)
+  ╠═╡ =#
+
+# ╔═╡ 2d15d9d3-4fec-498f-a1c0-9ae3c10f2d2f
+#=╠═╡
+const lbf_q_learning_avg = get_lbf_sarsa_statistics(q_learning; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
+  ╠═╡ =#
+
+# ╔═╡ 09474fdf-df26-4e33-8f29-fc6ad9b85368
+#=╠═╡
+const lbf_double_q_learning_avg = get_lbf_sarsa_statistics(double_q_learning; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
+  ╠═╡ =#
+
+# ╔═╡ 791a661b-77fd-4ddd-8b82-56c64dcc5c22
+#=╠═╡
+const value_iter_episode = runepisode(tab_5_3; π = value_iter.optimal_policy)
+  ╠═╡ =#
+
+# ╔═╡ a113a20e-a599-4dbb-87a0-f943245d75ce
+#=╠═╡
+@bind timestep Slider(1:length(value_iter_episode[1])+1)
+  ╠═╡ =#
+
+# ╔═╡ 57d02e2c-4387-4345-bed3-504fafcd2a26
+#=╠═╡
+@bind movie_timestep Clock(;max_value = length(value_iter_episode[1])+1, repeat = true, interval = 0.4)
+  ╠═╡ =#
+
 # ╔═╡ c755f0b1-2299-42b4-a28d-d53980260e79
 begin
 	initialize_reward_history(::AbstractTabularGameTransition{T, N}) where {N, T<:Real} = Vector{NTuple{N, T}}()
@@ -1353,6 +1455,26 @@ const soccer_sample_iql = independent_q_learning(soccer_env, 0.9f0; α = 0.1f0, 
 # ╔═╡ 4e008a70-2536-440a-afcb-c8b9772f4c8c
 #=╠═╡
 const soccer_dist_iql = independent_q_learning(soccer_env_dist, 0.9f0; α = 0.1f0, max_steps = 1_000_000, save_history = true)
+  ╠═╡ =#
+
+# ╔═╡ d9102b45-90da-4c86-8ffe-5fc35847efbf
+#=╠═╡
+TabularMDP(soccer_env, true, soccer_sample_iql.policies[1])
+  ╠═╡ =#
+
+# ╔═╡ d24f3f83-ecad-414d-9fed-6d2c59969ea7
+#=╠═╡
+TabularMDP(soccer_env, false, soccer_sample_iql.policies[1])
+  ╠═╡ =#
+
+# ╔═╡ a5530b30-a169-408f-a297-9c96e39c7800
+#=╠═╡
+TabularMDP(soccer_env_dist, true, make_random_policies(soccer_env)[2])
+  ╠═╡ =#
+
+# ╔═╡ 75934603-1fd2-4a65-87f5-21fc14367c04
+#=╠═╡
+lbf_conv_test = TabularMDP(ex_5_3, true, make_random_policies(ex_5_3)[2])
   ╠═╡ =#
 
 # ╔═╡ 75a6b525-a507-4cf0-9ba7-ec1e76e86465
@@ -2131,10 +2253,15 @@ version = "17.7.0+0"
 # ╠═d2bfbf48-2ca0-483f-afab-9a292343beca
 # ╠═e838d71d-4120-4e4c-8727-82caf6a1431c
 # ╠═53c087e9-ad7d-4a83-a373-0e0d3e406724
+# ╠═77719b6d-893e-4011-b676-cbd322d3a835
+# ╠═eb6189fd-68e0-435f-b736-dab754522ea9
+# ╠═727885f8-ad7a-44b4-845d-9a9d8aebdb87
+# ╠═b0b41d5e-4944-4fc8-b108-175c559e3d63
+# ╠═9908b24b-77c4-4ece-99b5-337dc6725a13
+# ╠═475e855e-ca4b-4466-ba8b-ca0edefb4f82
+# ╠═89b1cb3b-bf58-4ca3-a08d-736ee2af2b0f
+# ╠═fab57783-bcf7-4fd8-a5d1-5824db9226e4
 # ╠═3f9d927e-4158-4531-b31f-56aae3ac0c7b
-# ╠═862ff813-18fd-4dd5-86f0-b5cc8e9a021d
-# ╠═776a9ef9-8477-449f-b195-2cc5d7c93749
-# ╠═45668f60-2dbc-48d4-9903-111b80665845
 # ╟─04b35d98-e60f-4e3c-b89d-891f7139b5ec
 # ╠═738eadf8-7bbf-4942-a90d-e8accbb52bea
 # ╟─ae213605-c98f-4939-8e29-48eea2ff5ed8
@@ -2199,6 +2326,10 @@ version = "17.7.0+0"
 # ╟─8c6f4ab7-9172-4723-bc2b-e61fe0315e1c
 # ╠═bf52bae8-97d4-40b3-80c9-4afa2f77bd99
 # ╠═4e008a70-2536-440a-afcb-c8b9772f4c8c
+# ╠═d9102b45-90da-4c86-8ffe-5fc35847efbf
+# ╠═d24f3f83-ecad-414d-9fed-6d2c59969ea7
+# ╠═a5530b30-a169-408f-a297-9c96e39c7800
+# ╠═75934603-1fd2-4a65-87f5-21fc14367c04
 # ╟─75a6b525-a507-4cf0-9ba7-ec1e76e86465
 # ╟─9a0a63a1-0292-4937-9d7f-8c18bc3eb28b
 # ╠═924d646f-8fd7-4b0b-a5c5-0446abb6434e
