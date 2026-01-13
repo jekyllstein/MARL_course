@@ -1432,6 +1432,9 @@ md"""
 #### Level-Based Foraging Game
 """
 
+# ╔═╡ f95c2844-abcd-4c73-9ab1-f46cbedcf8ef
+#add comparison plot for LBF with average performance compared to other techniques
+
 # ╔═╡ a74c712b-5458-4d87-bdba-159617d30742
 const lbf_wolf_phc = wolf_phc(lbf_game, 0.99f0, typemax(Int64), 4_000_000; α = .02f0, ϵ = 0.05f0, save_history = true, l_w = 0.01f0, l_l = .02f0)
 
@@ -1451,8 +1454,67 @@ md"""
 #### Two-Player Two-Action General Sum Game
 """
 
-# ╔═╡ 2b3a5e06-ddf6-4c05-9312-86747997541a
-#add here wolf-phc vs the trajectory visualization above and see which equilibrium is actually learned by the algorithm
+# ╔═╡ 05ebce43-73e1-4d20-8e1f-3211e6c4eb9c
+#=╠═╡
+@bind generalreward2 PlutoUI.combine() do Child
+	m1 = md"""
+	|X Rewards|||
+	|---|---|---|
+	||1|2|
+	|1|$(Child(:xAA, NumberField(-10:10, default = -1)))|$(Child(:xAB, NumberField(-10:10, default = -5)))|
+	|2|$(Child(:xBA, NumberField(-10:10, default = 0)))|$(Child(:xBB, NumberField(-10:10, default = -3)))|
+	"""
+
+	m2 = md"""
+	|Y Rewards|||
+	|---|---|---|
+	||1|2|
+	|1|$(Child(:yAA, NumberField(-10:10, default = -1)))|$(Child(:yAB, NumberField(-10:10, default = -0)))|
+	|2|$(Child(:yBA, NumberField(-10:10, default = -5)))|$(Child(:yBB, NumberField(-10:10, default = -3)))|
+	"""
+
+	@htl("""
+		 <div style = "display: flex;">
+		 $m1
+		 $m2
+		 </div>
+		 """)
+end |> confirm
+  ╠═╡ =#
+
+# ╔═╡ b5f69f19-dcf3-4293-9588-450dea5b74f0
+#=╠═╡
+const gssg = create_non_repeated_game((Float32.([generalreward2.xAA generalreward2.xAB; generalreward2.xBA generalreward2.xBB]), Float32.([generalreward2.yAA generalreward2.yAB; generalreward2.yBA generalreward2.yBB])), ([1, 2], [1, 2]))
+  ╠═╡ =#
+
+# ╔═╡ 0ec7e320-9c95-47b1-9493-8f8dbb15baa2
+#=╠═╡
+const gssg_wolf_phc = wolf_phc(gssg, 1f0, typemax(Int64), 100_000; α = .1f0, ϵ = .1f0, α_decay = 0.999997f0, save_history = true, l_w = 0.00007f0, l_l = .00008f0, save_policy_history = true)
+  ╠═╡ =#
+
+# ╔═╡ 25a0e15d-5538-4ae4-b698-c6807edb18d4
+#=╠═╡
+function plot_gssg_policy_history(policy_history::Vector{NTuple{N, Matrix{T}}}) where {N, T<:Real}
+	αs = [a[1][1, 1] for a in policy_history]
+	βs = [a[2][1, 1] for a in policy_history]
+
+	trace = scatter(x = αs, y = βs, name = "WoLF-PHC Trajectory", line_color = "rgba(0, 0, 255, 0.25)")
+	start_trace = scatter(x = [αs[1]], y = [βs[1]], showlegend = false, mode = "markers", marker_symbol = "x", marker_color = "black")
+	unit_trace = scatter(x = [0, 0, 1, 1, 0], y = [0, 1, 1, 0, 0], mode = "lines", line_color = "black", line_dash = "dash", line_width = 0.5, name = "unit square")
+	plot([trace, unit_trace, start_trace], Layout(yaxis_scaleanchor = "x", xaxis_title = "α", yaxis_title = "β"))
+end
+  ╠═╡ =#
+
+# ╔═╡ 79f12e83-e6f7-4eb4-9ea7-30aeb334b697
+#=╠═╡
+@htl("""
+	 <div style = "display: flex;">
+	 $(plot_iga_trajectory(generalreward2, [(0.1, 0.1), (0.6, 0.9), (0.6, 0.6), (0.9, 0.9), (0.75, 0.6), (0.8, 0.2), (0.25, 0.5), (0., 0.), (0.5, 0.5), (0.2, 0.8)], 0.6, 0.9; num_steps = 10_000, κ = 0.001))
+
+	 $(plot_gssg_policy_history(gssg_wolf_phc.policy_history))
+	 </div>
+	 """)
+  ╠═╡ =#
 
 # ╔═╡ 5da718f5-c940-49a3-9c38-7af26a930439
 md"""
@@ -3529,6 +3591,7 @@ version = "17.7.0+0"
 # ╠═e38af890-82e6-4370-b2ba-db245996cbfc
 # ╠═1f3665a0-adc7-478d-b047-8e8028a0a061
 # ╟─74b82807-6b28-4aee-b37a-3f6f713649d1
+# ╠═f95c2844-abcd-4c73-9ab1-f46cbedcf8ef
 # ╠═a74c712b-5458-4d87-bdba-159617d30742
 # ╠═0e195ca4-9077-441e-8349-06b8824dce70
 # ╠═42a04270-323d-4d45-b025-d77694b5b982
@@ -3536,7 +3599,11 @@ version = "17.7.0+0"
 # ╠═2cd6aa77-6828-44ef-b7d9-4f6cfc50e880
 # ╠═36dfd0bf-b73c-472e-ad18-79383c10993c
 # ╟─65977e33-220d-42f2-bbe8-e76f9310f588
-# ╠═2b3a5e06-ddf6-4c05-9312-86747997541a
+# ╠═b5f69f19-dcf3-4293-9588-450dea5b74f0
+# ╠═0ec7e320-9c95-47b1-9493-8f8dbb15baa2
+# ╟─05ebce43-73e1-4d20-8e1f-3211e6c4eb9c
+# ╟─79f12e83-e6f7-4eb4-9ea7-30aeb334b697
+# ╠═25a0e15d-5538-4ae4-b698-c6807edb18d4
 # ╟─5da718f5-c940-49a3-9c38-7af26a930439
 # ╟─52a51c78-4438-44b2-8315-9cffd8ba2581
 # ╠═9a80e476-bad5-4a8f-a8e2-0008a1e5d698
