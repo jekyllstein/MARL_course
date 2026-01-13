@@ -1153,6 +1153,34 @@ end
 # ╔═╡ 5629f70c-b2cc-4a68-b5f0-9a11aef6dcbc
 RockPaperScissors.non_repeated_game.ptf(1, (3, 2))
 
+# ╔═╡ c2bec8e1-9df1-4f5f-8e92-0f6f5f9955a4
+md"""
+## Non-Repeated General-Sum Games
+"""
+
+# ╔═╡ 9f05e777-fb94-42f9-9cd7-b461f10f199d
+function create_non_repeated_game(reward_matrices::NTuple{N, Matrix{T}}, agent_actions::NTuple{N, Vector{A}}) where {A, T<:Real, N}
+	ns = size(first(reward_matrices))
+
+	test_mat = ones(Int64, ns...)
+	state_transition_map = ones(Int64, ns..., 2) .* 2
+	reward_transition_map = Array{NTuple{N, T}, N+1}(undef, ns..., 2)
+	
+	for i in CartesianIndices(test_mat)
+		reward_transition_map[i, 1] = NTuple{N, T}(reward_matrices[n][i] for n in 1:N)
+		reward_transition_map[i, 2] = NTuple{N, T}(zero(T) for n in 1:N)
+	end
+
+	ptf = TabularGameTransition(state_transition_map, reward_transition_map)
+
+	initialize_state_index() = 1
+
+	TabularStochasticGame([:play, :term], agent_actions, ptf, initialize_state_index, BitVector([false, true]))
+end
+
+# ╔═╡ a2284047-0aaf-41b2-a6a0-de082cdeb5a2
+create_non_repeated_game(([1. -1.; -1. 1.], [-1. 1.; 1. -1.]), ([1, 2], [1, 2]))
+
 # ╔═╡ cc259b71-cbe0-4990-ba6f-b495f6b0a2b7
 md"""
 # Independing Learning Algorithms
@@ -2310,6 +2338,9 @@ version = "17.7.0+0"
 # ╟─b53e1cfd-4f81-4e1e-bff0-3435d3fcd221
 # ╠═769e5dc3-684e-4d36-a63f-0edb90331c59
 # ╠═5629f70c-b2cc-4a68-b5f0-9a11aef6dcbc
+# ╟─c2bec8e1-9df1-4f5f-8e92-0f6f5f9955a4
+# ╠═9f05e777-fb94-42f9-9cd7-b461f10f199d
+# ╠═a2284047-0aaf-41b2-a6a0-de082cdeb5a2
 # ╟─cc259b71-cbe0-4990-ba6f-b495f6b0a2b7
 # ╠═9b75d562-ac45-406a-867b-b6d2af5822ee
 # ╠═c755f0b1-2299-42b4-a28d-d53980260e79
