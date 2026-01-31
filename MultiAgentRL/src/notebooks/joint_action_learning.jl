@@ -991,6 +991,7 @@ The trajectories followed by the parameters over time depend on the properties o
 	"""
 
 	@htl("""
+		 <h4>Game Definition</h4>
 		 <div style = "display: flex;">
 		 $m1
 		 $m2
@@ -1003,6 +1004,7 @@ end |> confirm
 #=╠═╡
 @bind traj_vars PlutoUI.combine() do Child
 	md"""
+	#### Trajectory Properties
 	α0: $(Child(:α0, Slider(0:0.1:1; default = 0.5, show_value = true)))
 	
 	β0: $(Child(:β0, Slider(0:0.1:1; default = 0.5, show_value = true)))
@@ -1013,6 +1015,11 @@ end |> confirm
 	"""
 end |> confirm
   ╠═╡ =#
+
+# ╔═╡ a5e84a20-26a6-4699-9de9-eb8b5d2306cf
+md"""
+Note that general sum games with a mixed equilibrium seem to cause the method to fail while zero-sum games with a mixed equilibrium works. Also, games with multiple equilibria will always converge to the pure one with this method.
+"""
 
 # ╔═╡ 7421e8f1-fa9b-4b36-9536-fba96567fd73
 function calc_mixed_nash(r::NamedTuple)
@@ -1243,14 +1250,14 @@ function plot_iga_trajectory(r::NamedTuple, init_points::Vector{A}, lmin::T, lma
 end
   ╠═╡ =#
 
-# ╔═╡ 84bd42dc-9750-4718-affa-78711bce7a85
-#=╠═╡
-plot_iga_trajectory(generalreward, [(0.1, 0.1), (0.6, 0.9), (0.6, 0.6), (0.9, 0.9), (0.75, 0.6), (0.8, 0.2), (0.25, 0.5), (0., 0.), (0.5, 0.5), (0.2, 0.8)], 0.2, 0.9; num_steps = 10_000, κ = 0.001)
-  ╠═╡ =#
-
 # ╔═╡ fe3eca61-0f6b-480b-815b-6c3f17fb7d2c
 #=╠═╡
-plot_iga_trajectory(generalreward, [(traj_vars.α0, traj_vars.β0)], traj_vars.lmin, traj_vars.lmax; num_steps = traj_vars.num_steps, κ = 0.001, κ_decay = .999999, clamp_output = true)
+@htl("""
+	 <div style = "display: flex;">
+	 $(plot_iga_trajectory(generalreward, [(0.1, 0.1), (0.6, 0.9), (0.6, 0.6), (0.9, 0.9), (0.75, 0.6), (0.8, 0.2), (0.25, 0.5), (0., 0.), (0.5, 0.5), (0.2, 0.8)], 0.2, 0.9; num_steps = 10_000, κ = 0.001))
+	 $(plot_iga_trajectory(generalreward, [(traj_vars.α0, traj_vars.β0)], traj_vars.lmin, traj_vars.lmax; num_steps = traj_vars.num_steps, κ = 0.001, κ_decay = .999999, clamp_output = true))
+	 </div>
+	 """)
   ╠═╡ =#
 
 # ╔═╡ 3ab9580f-0b52-4b96-a386-91783e598798
@@ -3560,9 +3567,9 @@ version = "17.7.0+0"
 # ╟─549e81d0-9dbe-4f89-9849-333d7bdc4d4f
 # ╟─9b2872a0-2edc-479c-9ed0-61d4fd516f4c
 # ╟─450ba512-388a-49fe-ab16-554bbe9e2e21
-# ╠═84bd42dc-9750-4718-affa-78711bce7a85
 # ╟─1c631fdb-b640-4b93-a1fd-0b9543131277
-# ╠═fe3eca61-0f6b-480b-815b-6c3f17fb7d2c
+# ╟─fe3eca61-0f6b-480b-815b-6c3f17fb7d2c
+# ╟─a5e84a20-26a6-4699-9de9-eb8b5d2306cf
 # ╠═7421e8f1-fa9b-4b36-9536-fba96567fd73
 # ╠═992f2ad9-8319-4a54-a915-9eee61adb8c1
 # ╠═aca85c13-6935-4906-b0f5-68f25584f29b
