@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.21
+# v0.20.24
 
 using Markdown
 using InteractiveUtils
@@ -7,30 +7,22 @@ using InteractiveUtils
 # ╔═╡ 20a8c921-816f-4c5c-9341-b7749644d249
 using PlutoDevMacros
 
-# ╔═╡ c3e732e2-2a10-4de3-800f-0378e0acd0dc
-begin
-	PlutoDevMacros.@frompackage @raw_str(joinpath(@__DIR__, "..", "RL_Module")) begin 
-		using RL_Module
-		using >.Random, >.Statistics, >.LinearAlgebra, >.Transducers, >.StaticArrays, >.DataStructures, >.SparseArrays
-	end
-end
-
-# ╔═╡ e5a78e58-0208-4c6a-9f7f-4779e384855b
-using JuMP
+# ╔═╡ 00999193-757c-4bea-a24c-a5ed8633d826
+using DataFrames, Dates, CSV, JuMP, HiGHS, DataStructures
 
 # ╔═╡ db2d2393-e984-4828-9ec7-d9dfe076bc79
 # ╠═╡ skip_as_script = true
 #=╠═╡
 begin
-	using PlutoUI, PlutoPlotly, PlutoProfile, BenchmarkTools, LaTeXStrings, HypertextLiteral, DataFrames, Dates, CSV
-	
+	using PlutoUI, PlutoPlotly, PlutoProfile, BenchmarkTools, LaTeXStrings, HypertextLiteral
 	TableOfContents()
 end
   ╠═╡ =#
 
-# ╔═╡ 00999193-757c-4bea-a24c-a5ed8633d826
-begin
-	@only_in_nb include(joinpath(@__DIR__, "multi_agent_types.jl"))
+# ╔═╡ c3e732e2-2a10-4de3-800f-0378e0acd0dc
+@only_in_nb begin
+	@frompackage @raw_str(joinpath(@__DIR__, "..", "RL_Module")) import *
+	include(joinpath(@__DIR__, "multi_agent_types.jl"))
 end
 
 # ╔═╡ c62ca696-4fbe-42e2-ab00-4a916f9fac8d
@@ -102,10 +94,15 @@ Stochastic game which is mostly deterministic.  For a given action selection, ea
 """
 
 # ╔═╡ 3120f952-d848-4f37-b20c-922b5e897587
+# ╠═╡ skip_as_script = true
+#=╠═╡
 const soccer_game = TwoPlayerSoccer.make_distribution_environment()
+  ╠═╡ =#
 
 # ╔═╡ 69ed465f-7d0b-480b-90a2-186f51258b38
+#=╠═╡
 const soccer_random_policy = make_random_policies(soccer_game)[1]
+  ╠═╡ =#
 
 # ╔═╡ 96b067f8-5e7e-459a-9e3f-5640aa18680b
 md"""
@@ -136,6 +133,7 @@ md"""
 end
 
 # ╔═╡ e7cc25e9-b4fe-42a6-b07f-1940e7018068
+#=╠═╡
 function test_soccer_policies(π1, π2; ntrials = 100_000, max_ep_length = 1_000)
 	data = 0:ntrials |> Map() do i
 		out = runepisode(soccer_game; πs = (π1, π2), max_steps = max_ep_length)
@@ -167,15 +165,20 @@ function test_soccer_policies(π1, π2; ntrials = 100_000, max_ep_length = 1_000
 	
 	(overall_stats = overall_stats, ball_start_stats = ball_start_stats, noball_start_stats = noball_start_stats)
 end
+  ╠═╡ =#
 
 # ╔═╡ fe4bd7bf-a73b-401c-8682-dc734122f5e8
+#=╠═╡
 function display_soccer_statistics(π1, π2, name1::AbstractString, name2::AbstractString; kwargs...)
 	results = test_soccer_policies(π1, π2; kwargs...)
 	display_soccer_statistics(results, name1, name2)
 end
+  ╠═╡ =#
 
 # ╔═╡ 939f23a4-d089-49ab-807c-ac107c3664d4
+#=╠═╡
 display_soccer_statistics(soccer_random_policy, soccer_random_policy, "Random", "Random"; max_ep_length = 10_000)
+  ╠═╡ =#
 
 # ╔═╡ af9ba099-95b3-40cb-b1fe-b6091cbe7cd2
 md"""
@@ -193,6 +196,95 @@ md"""
 
 For two-player zero-sum games, there is a unique minimax solution that depends on the reward values for each joint action.  The function calculates the value and solution from the perspective of either the first or second player.
 """
+
+# ╔═╡ 7b07aa13-b39a-4874-9de4-037685001e24
+begin
+	function solve_minimax_game!(reward_matrix::Matrix{T}, π::Matrix{T}, m::Array{T, 3}, i_s::Integer, player1::Bool) where T<:Real
+		model = Model(HiGHS.Optimizer)
+		(l, k) = size(reward_matrix)
+
+		min_reward = typemax(T)
+		@inbounds @simd for i_a1 in 1:l for i_a2 in 1:k
+			r = -m[i_a1, i_a2, i_s]
+			min_reward = min(r, min_reward)
+			reward_matrix[i_a1, i_a2] = r
+		end end
+
+		reward_matrix .-= min_reward
+
+		x_length = player1 ? l : k
+
+		@variable(model, x[1:x_length])
+
+		if player1
+			@constraint(model, x' * reward_matrix .≤ one(T))
+		else
+			@constraint(model, reward_matrix * x .≤ one(T))
+		end
+		
+		@constraint(model, x .>= zero(T))
+		@objective(model, Max, sum(x))
+		optimize!(model)
+		modified_game_value = inv(sum(value.(x)))
+		@inbounds @simd for i in 1:x_length
+			π[i, i_s] = value(x[i]) * modified_game_value
+		end
+		
+		-(modified_game_value + min_reward)
+	end
+
+	function solve_minimax_game!(reward_matrix::Matrix{T}, π::Matrix{T}, model::Model, x::Vector{VariableRef}, m::Array{T, 3}, i_s::Integer, player1::Bool) where T<:Real
+		
+		(l, k) = size(reward_matrix)
+		x_length = player1 ? l : k
+
+		c = (!player1 - player1)
+
+		if all(x -> isapprox(x, zero(T); atol = eps(one(T))), view(m, :, :, i_s)) 
+			p = one(T) / x_length
+			@inbounds @simd for i in 1:x_length
+				π[i, i_s] = p
+			end
+			return zero(T)
+		end
+
+		min_reward = typemax(T)
+		@inbounds @simd for i_a1 in 1:l for i_a2 in 1:k
+			r = c*m[i_a1, i_a2, i_s]
+			min_reward = min(r, min_reward)
+			reward_matrix[i_a1, i_a2] = r
+		end end
+
+		reward_matrix .-= (min_reward - one(T))
+
+		if all(x -> isapprox(x, reward_matrix[1]; atol = eps(one(T))), reward_matrix) 
+			p = one(T) / x_length
+			@inbounds @simd for i in 1:x_length
+				π[i, i_s] = p
+			end
+			return -reward_matrix[1]
+		end
+
+		if player1
+			@constraint(model, con_s, x' * reward_matrix .≤ one(T))
+		else
+			@constraint(model, con_s, reward_matrix * x .≤ one(T))
+		end
+		
+		optimize!(model)
+		modified_game_value = inv(sum(value.(x)))
+		@inbounds @simd for i in 1:x_length
+			π[i, i_s] = max(zero(T), value(x[i]) * modified_game_value)
+		end
+
+		for c in con_s
+			delete(model, c)
+		end
+		unregister(model, :con_s)
+		
+		-(modified_game_value + min_reward - one(T))
+	end
+end
 
 # ╔═╡ e527160e-6d64-48d2-ab4d-abc67afebb97
 md"""
@@ -226,18 +318,90 @@ begin
 	end
 end
 
-# ╔═╡ b8b66510-e829-44cf-bb64-3d99d481917c
-soccer_game
+# ╔═╡ 2eb915ed-16c2-4ea0-bf5f-5d1456249224
+function value_iteration_game!(v_est::Vector{T}, πs::NTuple{2, Matrix{T}}, m_est::Array{T, 3}, ptf::TabularZeroSumGameTransition{T, ST, RT}, γ::T, nmax::Integer; show_message::Bool = true, θ::T = eps(zero(T))) where {T<:Real, ST, RT}
+	(l, k, num_states) = size(m_est)
+	reward_matrix = zeros(T, l, k)
+
+	delta_max = typemax(T)
+	sweep = 0
+	
+	state_transitions = ptf.state_transition_map
+	reward_transitions = ptf.reward_transition_map
+
+	#setup two models, one for each player, since in general the available actions could differ from one player to another
+	model1 = Model(HiGHS.Optimizer)
+	model2 = Model(HiGHS.Optimizer)
+
+	@variable(model1, x[1:l])
+	@constraint(model1, x .>= zero(T))
+	@objective(model1, Max, sum(x))
+
+	@variable(model2, y[1:k])
+	@constraint(model2, y .>= zero(T))
+	@objective(model2, Max, sum(y))
+
+	while (sweep < nmax) && (delta_max > θ)
+		for (i, inds) in enumerate(CartesianIndices(state_transitions))
+			a = (inds[1], inds[2])
+			i_s = inds[3]
+			v = bellman_game_reward_value(ptf, i_s, a, γ, v_est)
+			# if !iszero(v1)
+			# 	@info "Non zero game value updated for player 1 state $i_s"
+			# end
+
+			# if !iszero(v2)
+			# 	@info "Non zero game value updated for player2 state $i_s"
+			# end
+			
+			m_est[i] = v
+		end
+
+		delta_max = typemin(T)
+		for i_s in eachindex(v_est)
+			v_old = v_est[i_s]
+			v_est[i_s] = solve_minimax_game!(reward_matrix, πs[1], model1, x, m_est, i_s, true)
+			
+			delta_max = max(TabularRL.calc_pct_change(v_old, v_est[i_s]), delta_max)
+		end
+		sweep += 1
+		show_message && @info "After $(sweep) sweeps, maximum value change is $delta_max"
+	end
+
+	for i_s in eachindex(v_est)
+		solve_minimax_game!(reward_matrix, πs[2], model2, y, m_est, i_s, false)
+	end
+
+	return (values = v_est, total_sweeps = sweep, policies = πs, game_rewards = m_est)
+end
+
+# ╔═╡ af0265b8-7fe9-499a-b675-32bf5ba76f64
+begin
+	value_iteration_game(ptf::TabularZeroSumGameTransition{T, ST, RT}, γ::T; nmax::Integer = typemax(Int64), dims::NTuple{3, Int64} = size(ptf.state_transition_map), v_est::Vector{T} = zeros(T, dims[3]), πs::NTuple{2, Matrix{T}} = (zeros(T, dims[1], dims[3]), zeros(T, dims[2], dims[3])), m_est::Array{T, 3} = zeros(T, dims...), kwargs...) where {T<:Real, RT, ST} = value_iteration_game!(v_est, πs, m_est, ptf, γ, nmax; kwargs...)
+
+	value_iteration_game(game::TabularStochasticGame, γ::T; kwargs...) where {T<:Real} = value_iteration_game(game.ptf, γ; kwargs...)
+end
 
 # ╔═╡ fe077be2-467e-43a7-8729-3f3d48b8c91b
 md"""
 ### Soccer Game Example
 """
 
+# ╔═╡ 439fff54-57e8-409e-994e-55e536d2ea0b
+# ╠═╡ show_logs = false
+#=╠═╡
+const soccer_value_iter = value_iteration_game(soccer_game, 0.9f0; θ = 1f-5)
+  ╠═╡ =#
+
 # ╔═╡ 9a615e94-6be8-47f5-aa38-91088f3accc3
 md"""
 #### Minimax vs Minimax
 """
+
+# ╔═╡ 30d70205-a091-4155-87f5-d0ada3b597e0
+#=╠═╡
+const minimax_vs_minimax_stats = display_soccer_statistics(soccer_value_iter.policies..., "Minimax", "Minimax"; ntrials = 1_000_000)
+  ╠═╡ =#
 
 # ╔═╡ bfd2d1a0-7b3e-4fbf-9a29-22de88bbc08d
 #compare solution states with different discount rates to see which states are affected by that
@@ -253,6 +417,16 @@ md"""
 #### Minimax vs Random
 """
 
+# ╔═╡ 19d9e4b3-2c6b-4f33-a5be-32aa4a38513a
+#=╠═╡
+const minimax_vs_random_stats = display_soccer_statistics(soccer_value_iter.policies[1], soccer_random_policy, "Minimax", "Random")
+  ╠═╡ =#
+
+# ╔═╡ 84fdc00e-43d1-44c4-b479-d7be79c2d4cd
+#=╠═╡
+const random_vs_minimax_stats = display_soccer_statistics(soccer_random_policy, soccer_value_iter.policies[2], "Random", "Minimax")
+  ╠═╡ =#
+
 # ╔═╡ f31c6793-2bfb-4970-9b36-fbc95460be30
 md"""
 ## Joint-Action Learning
@@ -260,15 +434,104 @@ md"""
 When we can only sample data from a game, we must rely on a method which uses sample averaging to calculate game values.  The solution concept is the same as that for value iteration but with updates occuring stochastially rather than with expected updates.
 """
 
+# ╔═╡ 95a3fcca-1f0c-49e9-9e9c-b1bea8cb76c4
+#joint action learning with game theory
+function jal_gt!(q_est::Array{T, 3}, πs::NTuple{2, Matrix{T}}, game::TabularStochasticGame{T, S, A, 2, P, F}, γ::T, max_episodes::Integer, max_steps::Integer; α::T = one(T) / 10, ϵ::T = one(T) / 10, α_decay::T = one(T)) where {T<:Real, S, A, P<:AbstractTabularZeroSumGameTransition{T}, F<:Function}
+	ep = 1
+	step = 1
+	i_s = game.initialize_state_index()
+	a = [0, 0]
+	(l, k, num_states) = size(q_est)
+	reward_matrix = zeros(T, l, k)
+
+	model1 = Model(HiGHS.Optimizer)
+	model2 = Model(HiGHS.Optimizer)
+
+	@variable(model1, x[1:l])
+	@constraint(model1, x .>= zero(T))
+	@objective(model1, Max, sum(x))
+
+	@variable(model2, y[1:k])
+	@constraint(model2, y .>= zero(T))
+	@objective(model2, Max, sum(y))
+
+	α_step = α
+	
+	while (ep <= max_episodes) && (step <= max_steps)
+		if rand() < ϵ
+			a[1] = rand(eachindex(game.agent_actions[1]))
+		else
+			# solve_minimax_game!(reward_matrix, πs[1], model1, x, q_est, i_s, true)
+			a[1] = sample_action(πs[1], i_s)
+		end
+
+		if rand() < ϵ
+			a[2] = rand(eachindex(game.agent_actions[2]))
+		else
+			solve_minimax_game!(reward_matrix, πs[2], model2, y, q_est, i_s, false)
+			a[2] = sample_action(πs[2], i_s)
+		end
+
+		(r, i_s′) = game.ptf(i_s, NTuple{2, Int64}(a))
+
+		if game.terminal_states[i_s′]
+			game_state_value = zero(T)
+			i_s′ = game.initialize_state_index()
+			solve_minimax_game!(reward_matrix, πs[1], model1, x, q_est, i_s′, true)
+			ep += 1
+		else
+			game_state_value = solve_minimax_game!(reward_matrix, πs[1], model1, x, q_est, i_s′, true)
+		end
+
+		
+		target = r + γ*game_state_value
+		δ = target - q_est[a[1], a[2], i_s]
+		q_est[a[1], a[2], i_s] += α_step * δ
+
+		i_s = i_s′
+		step += 1
+		α_step *= α_decay
+	end
+
+	for i_s in eachindex(game.states)
+		solve_minimax_game!(reward_matrix, πs[1], model1, x, q_est, i_s, true)
+		solve_minimax_game!(reward_matrix, πs[2], model2, y, q_est, i_s, false)
+	end
+	
+	return (joint_action_values = q_est, policies = πs)
+end	
+
+# ╔═╡ b0ef6a1d-cb67-44a3-b8da-4f56930f85d7
+begin
+	jal_gt(game::TabularStochasticGame{T, S, A, 2, P, F}, γ::T, max_episodes::Integer, max_steps::Integer; init_value::T = zero(T), q_est::Array{T, 3} = ones(T, length(game.agent_actions[1]), length(game.agent_actions[2]), length(game.states)) .* init_value, πs::NTuple{2, Matrix{T}} = make_random_policies(game), kwargs...) where {T<:Real, S, A, P<:AbstractTabularZeroSumGameTransition{T}, F<:Function} = 
+	jal_gt!(q_est, πs, game, γ, max_episodes, max_steps; kwargs...)
+end
+
 # ╔═╡ 2d8f6a70-1f8e-4ad6-a616-e725b5c0a377
 md"""
 ### Soccer Game Example
 """
 
+# ╔═╡ e12a9ce4-1441-4863-9e31-19d04f512c61
+# ╠═╡ show_logs = false
+#=╠═╡
+const soccer_jal = jal_gt(soccer_game, 0.9f0, typemax(Int64), 1_000_000; α = 1f0, ϵ = 0.2f0, α_decay = 0.9999954f0)
+  ╠═╡ =#
+
+# ╔═╡ 5906e0f9-eaf6-44f0-bfee-fdb4dd02f08b
+#=╠═╡
+const jal_values = [soccer_jal.joint_action_values[:, :, i_s] .* (soccer_jal.policies[1][:, i_s] * soccer_jal.policies[2][:, i_s]') |> sum for i_s in eachindex(soccer_game.states)]
+  ╠═╡ =#
+
 # ╔═╡ 9ea31e89-6279-456d-be11-e915686e0be4
 md"""
 #### Minimax Q vs Minimax Q
 """
+
+# ╔═╡ a86d8b48-6619-4f92-aa17-17e3c4a5f4f7
+#=╠═╡
+const soccer_jal_stats = display_soccer_statistics(soccer_jal.policies..., "Minimax Q", "Minimax Q")
+  ╠═╡ =#
 
 # ╔═╡ 3ec640b5-9c7a-4973-b128-ec438d45f5b7
 md"""
@@ -280,6 +543,11 @@ md"""
 #### Minimax Q vs Random
 """
 
+# ╔═╡ 1eaed379-6f4d-4634-aea6-a5b1941389d4
+#=╠═╡
+const soccer_jal_vs_random_stats = display_soccer_statistics(soccer_jal.policies[1], soccer_random_policy, "Minimax Q", "Random")
+  ╠═╡ =#
+
 # ╔═╡ b2872d0f-f780-449a-b17d-72d1506f90c0
 md"""
 #### Random Performance vs True Minimax
@@ -287,10 +555,20 @@ md"""
 Comparing the two policies we can see a higher reward value and higher winrate for the true solution compared to the estimated one.
 """
 
+# ╔═╡ f6ea001e-38f6-428c-a107-4ddcf817f470
+#=╠═╡
+(exact_solution = minimax_vs_random_stats, estimated_solution = soccer_jal_vs_random_stats)
+  ╠═╡ =#
+
 # ╔═╡ bbdece04-95cd-4333-8244-eaf6f0be4b18
 md"""
 #### Minimax Q vs Minimax
 """
+
+# ╔═╡ fb3e4d0f-bc6c-45a2-9491-225ef7b8f647
+#=╠═╡
+const soccer_jal_vs_minimax_stats = display_soccer_statistics(soccer_jal.policies[1], soccer_value_iter.policies[2], "Minimax Q", "Minimax")
+  ╠═╡ =#
 
 # ╔═╡ dfd93d6c-da3a-4f02-b8a4-6ebec3dc8284
 md"""
@@ -304,8 +582,11 @@ md"""
 Even though this is a non-repeated game, we can always create it as a stochastic game using a terminal state from which all rewards are 0.  Every episode then begins in the playable game state and transitions into the terminal state after first first joint action selection.
 """
 
-# ╔═╡ df15815e-154e-4738-8594-e1413ebd73e9
-RockPaperScissors.non_repeated_game
+# ╔═╡ f959e7c8-7c3b-4c91-b3f1-3f8934d1e12f
+# ╠═╡ skip_as_script = true
+#=╠═╡
+jal_gt(RockPaperScissors.non_repeated_game, 1f0, typemax(Int64), 500; α = 0.1f0)
+  ╠═╡ =#
 
 # ╔═╡ cc784f21-a230-4884-99a1-4afe41f95ceb
 md"""
@@ -415,10 +696,14 @@ This method does not learn joint-action values and is an example of a single-age
 """
 
 # ╔═╡ c4929e3a-c48f-4ba1-bf78-32f42fa7446d
+#=╠═╡
 const soccer_iql = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 10_000_000, α_decay = 0.99999954f0, ϵ = 0.2f0, save_history = true)
+  ╠═╡ =#
 
 # ╔═╡ e6f529bf-c71e-431a-90ae-884d59d12132
+#=╠═╡
 const soccer_iql_stats = display_soccer_statistics(soccer_iql.policies..., "IQL", "IQL")
+  ╠═╡ =#
 
 # ╔═╡ 448ed962-b29f-445a-bb62-29c617a0b12e
 md"""
@@ -431,7 +716,19 @@ Episodes proceed similarly to the minimax opponents with each agent exchanging c
 """
 
 # ╔═╡ eda86d7a-87ca-4f07-9ca9-e9045906da92
+#=╠═╡
 const iql_vs_random_stats = display_soccer_statistics(soccer_iql.policies[1], soccer_random_policy, "IQL", "Random")
+  ╠═╡ =#
+
+# ╔═╡ 0fc4963b-2100-4b5d-a663-1c5306f311ca
+#=╠═╡
+const iql_vs_minimax_stats = display_soccer_statistics(soccer_iql.policies[1], soccer_value_iter.policies[2], "IQL", "Minimax")
+  ╠═╡ =#
+
+# ╔═╡ 879e7384-7786-43b2-a36f-229929e802cf
+#=╠═╡
+const iql_vs_jal_stats = display_soccer_statistics(soccer_iql.policies[1], soccer_jal.policies[2], "IQL", "Minimax Q")
+  ╠═╡ =#
 
 # ╔═╡ 33669b7d-4609-4a11-a6d2-7569a582353e
 md"""
@@ -454,7 +751,9 @@ Below I show both methods against the random opponent, but the second option is 
 """
 
 # ╔═╡ c3418786-fa47-4eb3-b239-3183ff920cc7
+#=╠═╡
 const soccer_random_vs_optimal = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 1_000_000, train_policies = 2:2, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
+  ╠═╡ =#
 
 # ╔═╡ c098899d-afba-4776-9c46-a8e530834edd
 md"""
@@ -469,7 +768,9 @@ First we make a `TabularMDP` using the random policy to fully specify the enviro
 """
 
 # ╔═╡ f7594ebf-443a-4f0b-b7e1-b8955bf503fe
+#=╠═╡
 const soccer_random_opponent_mdp = TabularMDP(soccer_game, false, soccer_random_policy)
+  ╠═╡ =#
 
 # ╔═╡ 549b6b21-5b35-4205-b5ee-97752253a046
 md"""
@@ -478,13 +779,17 @@ Then perform value iteration with this environment and save the optimal policy
 
 # ╔═╡ 5ae3f279-3ec2-45dc-973d-2ffdbeb69890
 # ╠═╡ show_logs = false
+#=╠═╡
 const π_opt_vs_random = value_iteration_v(soccer_random_opponent_mdp, 0.9f0).optimal_policy
+  ╠═╡ =#
 
 # ╔═╡ 40999eca-fe52-4aef-a5c0-c712829e554f
+#=╠═╡
 function learn_optimal_soccer_opponent(π::Matrix)
 	mdp = TabularMDP(soccer_game, false, π)
 	value_iteration_v(mdp, 0.9f0).optimal_policy
 end
+  ╠═╡ =#
 
 # ╔═╡ 201e1550-6637-4683-8701-3c041921d8af
 md"""
@@ -492,7 +797,9 @@ Q-learning results
 """
 
 # ╔═╡ 91b0b90b-a1d7-42ac-a493-257dcc29bc6a
+#=╠═╡
 const random_vs_optimal_stats = display_soccer_statistics(soccer_random_vs_optimal.policies..., "Random", "Optimal")
+  ╠═╡ =#
 
 # ╔═╡ 33d0b3ab-01b6-4c77-9ab8-9d6f30de7ba4
 md"""
@@ -500,7 +807,9 @@ Value iteration results
 """
 
 # ╔═╡ 57d38973-1a03-4f8d-ab08-f4d5e3e76677
+#=╠═╡
 const random_vs_optimal_stats2 = display_soccer_statistics(soccer_random_policy, π_opt_vs_random, "Random", "Optimal")
+  ╠═╡ =#
 
 # ╔═╡ b84645f7-7ce2-498a-9db7-0da603e2904a
 md"""
@@ -508,6 +817,17 @@ md"""
 
 This strategy should be unexploitable meaning the best expected discounted reward one could hope to achieve against it is 0
 """
+
+# ╔═╡ 04206908-3e01-4541-be59-92e7e4dca793
+# ╠═╡ show_logs = false
+#=╠═╡
+const π_opt_vs_minimax = learn_optimal_soccer_opponent(soccer_value_iter.policies[1])
+  ╠═╡ =#
+
+# ╔═╡ a07e2a13-a9d5-4558-8f63-b15a73838b1e
+#=╠═╡
+display_soccer_statistics(soccer_value_iter.policies[1], π_opt_vs_minimax, "Minimax", "Optimal"; ntrials = 1_000_000)
+  ╠═╡ =#
 
 # ╔═╡ ab2afb16-2c7e-4874-bb8e-ed5e65c2d11e
 md"""
@@ -524,6 +844,22 @@ md"""
 ### Minimax Q-learning
 """
 
+# ╔═╡ 32bc7859-7503-46c6-b8e0-2c3c22b2acc9
+#=╠═╡
+const soccer_jal_vs_optimal = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 1_000_000, πs = (soccer_jal.policies[1], copy(soccer_random_policy)), train_policies = 2:2, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
+  ╠═╡ =#
+
+# ╔═╡ fb9eaf3f-d7ad-403a-98fc-64098df10737
+# ╠═╡ show_logs = false
+#=╠═╡
+const π_opt_vs_jal = learn_optimal_soccer_opponent(soccer_jal.policies[1])
+  ╠═╡ =#
+
+# ╔═╡ f5d89ff7-0fba-49d5-b7a3-eb9a0bc84f8d
+#=╠═╡
+const jal_vs_optimal_stats = display_soccer_statistics(soccer_jal.policies[1], π_opt_vs_jal, "Minimax Q", "Optimal")
+  ╠═╡ =#
+
 # ╔═╡ d5c07738-ef3f-4234-ae9b-26f73bf710db
 md"""
 ### Independent Q-learning
@@ -533,10 +869,14 @@ Even though the IQL agents did very well against both random and minimax opponen
 
 # ╔═╡ 93c37f74-19dd-4920-8203-fe3304b32612
 # ╠═╡ show_logs = false
+#=╠═╡
 const π_opt_vs_iql = learn_optimal_soccer_opponent(soccer_iql.policies[1])
+  ╠═╡ =#
 
 # ╔═╡ e9630b92-6252-4d03-ab70-59902841ad65
+#=╠═╡
 const iql_vs_optimal_stats = display_soccer_statistics(soccer_iql.policies[1], π_opt_vs_iql, "IQL", "Optimal")
+  ╠═╡ =#
 
 # ╔═╡ 35be842e-cbaf-49a1-8d4e-45dfa5dd9d5c
 md"""
@@ -849,20 +1189,35 @@ Note that since the true minimax solution has a probabalistic equilibrium, this 
 """
 
 # ╔═╡ 731008b1-2d23-4a8e-ab19-ac61e1f6a01b
+#=╠═╡
 const soccer_jal_am = jal_am(soccer_game, 0.9f0, typemax(Int64), 10_000_000; α = 1f0, ϵ = .25f0, α_decay = 0.99999954f0, ϵ_decay = 0.99999954f0, ϵ_min = 0.05f0, save_history = true)
+  ╠═╡ =#
 
 # ╔═╡ 8087e0c6-c0e2-499d-baec-499e23b3a8e5
+#=╠═╡
 display_soccer_statistics(soccer_jal_am.policies..., "JAL-AM", "JAL-AM")
+  ╠═╡ =#
+
+# ╔═╡ ce4b2377-45e2-421d-b457-c40aaabee4e4
+#=╠═╡
+display_soccer_statistics(soccer_jal_am.policies[1], soccer_value_iter.policies[2], "JAL-AM", "Minimax")
+  ╠═╡ =#
 
 # ╔═╡ 026c1c3e-8ae2-4acb-8f2e-286187a4e408
+#=╠═╡
 display_soccer_statistics(soccer_jal_am.policies[1], soccer_random_policy, "JAL-AM", "Random")
+  ╠═╡ =#
 
 # ╔═╡ 1b84c0a8-5042-43df-b6d9-85d2e552f4f6
 # ╠═╡ show_logs = false
+#=╠═╡
 const π_opt_vs_jal_am = learn_optimal_soccer_opponent(soccer_jal_am.policies[1])
+  ╠═╡ =#
 
 # ╔═╡ 48a84539-72f7-4d23-b2fd-e11270b49fe9
+#=╠═╡
 const jal_am_vs_optimal_stats = display_soccer_statistics(soccer_jal_am.policies[1], π_opt_vs_jal_am, "JAL-AM", "Optimal")
+  ╠═╡ =#
 
 # ╔═╡ 8750fa7e-0511-47cc-be6f-cacc1dcd098c
 md"""
@@ -872,41 +1227,60 @@ This task is a general sum stochastic game but cooperative so central and indepe
 """
 
 # ╔═╡ f3a8c840-8c0c-4bcd-a541-2801cddd529f
+# ╠═╡ skip_as_script = true
+#=╠═╡
 const lbf_game = LevelBasedForaging.make_5_3_environment()
+  ╠═╡ =#
 
 # ╔═╡ 6d597034-1f18-4105-9c82-a4270febedbe
+#=╠═╡
 const lbf_mdp = TabularMDP(lbf_game, sum)
+  ╠═╡ =#
 
 # ╔═╡ c259ba28-e13d-41e8-a82e-d6dd3f10220b
+#=╠═╡
 function get_lbf_sarsa_statistics(algo; nruns = Base.Threads.nthreads(), kwargs...)
 	1:nruns |> Map() do i
 		output = algo(lbf_mdp, 0.99f0; kwargs..., save_history = true)
 		output.reward_history
 	end |> foldxt((a, b) -> a .+ b) |> v -> v ./ nruns
 end
+  ╠═╡ =#
 
 # ╔═╡ f975ea7d-8e9f-4b91-a93f-4dfbae110193
+#=╠═╡
 function get_lbf_game_statistics(algo; nruns = Base.Threads.nthreads(), kwargs...)
 	1:nruns |> Map() do i
 		output = algo(lbf_game, 0.99f0; kwargs..., save_history = true)
 		[sum(a) for a in output.reward_history]
 	end |> foldxt((a, b) -> a .+ b) |> v -> v ./ nruns
 end
+  ╠═╡ =#
 
 # ╔═╡ dec68672-3035-42a2-9510-ca2bdc196d35
+#=╠═╡
 const lbf_cql_stats = get_lbf_sarsa_statistics(q_learning; α = 0.01f0, ϵ = 0.05f0, max_steps = 1_000_000)
+  ╠═╡ =#
 
 # ╔═╡ fc0b0230-8064-44e9-b9d4-2c33da1c096b
+#=╠═╡
 const lbf_iql_stats = get_lbf_game_statistics(independent_q_learning; α = 0.01f0, ϵ = 0.05f0, max_steps = 1_000_000)
+  ╠═╡ =#
 
 # ╔═╡ 525b2ab2-e51b-4e83-a42d-d423277ce02d
+#=╠═╡
 const lbf_jal_am_stats = get_lbf_game_statistics(jal_am; α = 0.01f0, max_steps = 1_000_000, ϵ = 1f0, ϵ_min = 0.05f0, ϵ_decay = 0.95f0/999_000, α_min = 0.01f0, use_linear_decay = true)
+  ╠═╡ =#
 
 # ╔═╡ 8878e879-6e70-4d21-8eb9-c4e1898f0f48
+#=╠═╡
 const lbf_jal_am = jal_am(lbf_game, 0.99f0, typemax(Int64), 1_000_000;  α = 0.01f0, ϵ = 1f0, ϵ_min = 0.05f0, ϵ_decay = 0.95f0/999_000, α_min = 0.01f0, use_linear_decay = true)
+  ╠═╡ =#
 
 # ╔═╡ 58cda3e3-9ba1-428b-bc80-b62951c4e193
+#=╠═╡
 runepisode(lbf_game; πs = lbf_jal_am.policies)
+  ╠═╡ =#
 
 # ╔═╡ 8adec11d-e873-49c7-8a49-3e584cf76720
 md"""
@@ -914,10 +1288,56 @@ md"""
 """
 
 # ╔═╡ 23db3972-76b7-4369-866b-d1f187ba7670
+# ╠═╡ skip_as_script = true
+#=╠═╡
 const jal_am_rps = jal_am(RockPaperScissors.non_repeated_game, 1f0, 500, typemax(Int64); α = 1f0, ϵ = 0.1f0, save_policy_history = true)
+  ╠═╡ =#
 
 # ╔═╡ c6b44ef8-d41d-49b1-ad8f-bd9f7cb5255a
 #note that this is not the same as fictitious play because we do need to learn the joint action values instead of assuming the game values are all there is
+
+# ╔═╡ ce5ed730-1f97-43f9-8b04-f1018b794166
+md"""
+### General Sum Game Example
+"""
+
+# ╔═╡ 762d2af0-c659-4af0-b567-677bbedcfad4
+#=╠═╡
+@bind generalreward3 PlutoUI.combine() do Child
+	m1 = md"""
+	|X Rewards|||
+	|---|---|---|
+	||1|2|
+	|1|$(Child(:xAA, NumberField(-10:10, default = -1)))|$(Child(:xAB, NumberField(-10:10, default = -5)))|
+	|2|$(Child(:xBA, NumberField(-10:10, default = 0)))|$(Child(:xBB, NumberField(-10:10, default = -3)))|
+	"""
+
+	m2 = md"""
+	|Y Rewards|||
+	|---|---|---|
+	||1|2|
+	|1|$(Child(:yAA, NumberField(-10:10, default = -1)))|$(Child(:yAB, NumberField(-10:10, default = -0)))|
+	|2|$(Child(:yBA, NumberField(-10:10, default = -5)))|$(Child(:yBB, NumberField(-10:10, default = -3)))|
+	"""
+
+	@htl("""
+		 <div style = "display: flex;">
+		 $m1
+		 $m2
+		 </div>
+		 """)
+end |> confirm
+  ╠═╡ =#
+
+# ╔═╡ 923384ff-d4a6-4a5d-839e-65b347aecdd6
+#=╠═╡
+const gssg2 = create_non_repeated_game((Float32.([generalreward3.xAA generalreward3.xAB; generalreward3.xBA generalreward3.xBB]), Float32.([generalreward3.yAA generalreward3.yAB; generalreward3.yBA generalreward3.yBB])), ([1, 2], [1, 2]))
+  ╠═╡ =#
+
+# ╔═╡ aa2f0f49-f3a7-47c6-bf13-4dcda1a2405f
+#=╠═╡
+const gssg_jal_am_test = jal_am(gssg2, 1f0, typemax(Int64), 500; α = 0.8f0, ϵ = 0.1f0, α_decay = 1f0, save_history = true, save_policy_history = true)
+  ╠═╡ =#
 
 # ╔═╡ b6a0394e-57a5-400d-b83d-c7947f3e8a89
 md"""
@@ -963,8 +1383,8 @@ The solution is the point where both partial derivatives are 0 and is given by:
 
 ```math
 \begin{flalign}
-\alpha^* = \frac{r_{2, 2}^x - r_{1, 2}^x}{u} \\
-\beta^* = \frac{r_{2, 2}^y - r_{2, 1}^x}{u^\prime} \\
+\beta^* = \frac{r_{2, 2}^x - r_{1, 2}^x}{u} \\
+\alpha^* = \frac{r_{2, 2}^y - r_{2, 1}^x}{u^\prime} \\
 \end{flalign}
 ```
 
@@ -1016,9 +1436,14 @@ end |> confirm
 end |> confirm
   ╠═╡ =#
 
+# ╔═╡ a8629db6-b125-4d5c-b9ce-e6c3a6feed25
+md"""
+##### IGA Trajectories
+"""
+
 # ╔═╡ a5e84a20-26a6-4699-9de9-eb8b5d2306cf
 md"""
-Note that general sum games with a mixed equilibrium seem to cause the method to fail while zero-sum games with a mixed equilibrium works. Also, games with multiple equilibria will always converge to the pure one with this method.
+Note that general sum games with a mixed equilibrium seem to cause the method to fail while zero-sum games with a mixed equilibrium works. Also, games with multiple equilibria will usually converge to the pure one with this method.  Sometimes if the initial conditions are just right, convergence to the mixed equilibrium can happen with a straight line trajectory.  See the Chicken game for an example.
 """
 
 # ╔═╡ 7421e8f1-fa9b-4b36-9536-fba96567fd73
@@ -1026,8 +1451,8 @@ function calc_mixed_nash(r::NamedTuple)
 	u = r.xAA - r.xAB - r.xBA + r.xBB
 	u′ = r.yAA - r.yAB - r.yBA + r.yBB
 
-	α = (r.xBB - r.xAB) / u
-	β = (r.yBB - r.yBA) / u′
+	β = (r.xBB - r.xAB) / u
+	α = (r.yBB - r.yBA) / u′
 	(α, β)
 end
 
@@ -1158,9 +1583,9 @@ function calc_iga_trajectory(r::NamedTuple, lmin::T, lmax::T, α_e::T, β_e::T; 
 	return (α_t, β_t)
 end
 
-# ╔═╡ bb22acc8-f82f-42e5-ac75-c8dc607f92d9
+# ╔═╡ 555773f3-6e40-492d-b4c9-0d5030ce1ad8
 #=╠═╡
-function plot_iga_trajectory(r::NamedTuple, init_points::Vector{A}; kwargs...) where A<:Tuple
+function plot_nash_traces(r::NamedTuple)
 	(α, β) = calc_mixed_nash(r)
 	pure_out = calc_pure_nash(r)
 
@@ -1176,19 +1601,48 @@ function plot_iga_trajectory(r::NamedTuple, init_points::Vector{A}; kwargs...) w
 		[scatter()]
 	else
 		[begin
-		 	scatter(x = [a[1] - 1], y = [a[2] - 1], name = "Pure Equlibrium", mode = "markers", marker_symbol = "triangle-up", marker_color = "teal")
+		 	scatter(x = [2 - a[1]], y = [2 - a[2]], name = "Pure Equlibrium", mode = "markers", marker_symbol = "triangle-up", marker_color = "teal")
 		 end
 		for a in findall(pure_out)]
 	end
+
+	vcat(pure_nash_traces, mixed_nash_trace)
+end
+  ╠═╡ =#
+
+# ╔═╡ bb22acc8-f82f-42e5-ac75-c8dc607f92d9
+#=╠═╡
+function plot_iga_trajectory(r::NamedTuple, init_points::Vector{A}; kwargs...) where A<:Tuple
+	# (α, β) = calc_mixed_nash(r)
+	# pure_out = calc_pure_nash(r)
+
+	# valid_mixed_nash = (0 ≤ α ≤ 1) && (0 ≤ β ≤ 1)
+
+	# mixed_nash_trace = if valid_mixed_nash
+	# 	scatter(x = [α], y = [β], name = "Mixed Equilibrium", mode = "markers", marker_symbol = "star", marker_color = "blue")
+	# else
+	# 	scatter()
+	# end
+
+	# pure_nash_traces = if iszero(sum(pure_out))
+	# 	[scatter()]
+	# else
+	# 	[begin
+	# 	 	scatter(x = [a[1] - 1], y = [a[2] - 1], name = "Pure Equlibrium", mode = "markers", marker_symbol = "triangle-up", marker_color = "teal")
+	# 	 end
+	# 	for a in findall(pure_out)]
+	# end
+
+	nash_traces = plot_nash_traces(r)
 
 	unit_trace = scatter(x = [0, 0, 1, 1, 0], y = [0, 1, 1, 0, 0], mode = "lines", line_color = "black", line_dash = "dash", line_width = 0.5, name = "unit square")
 	
 	traces = [begin
 			 	(α_t, β_t) = calc_iga_trajectory(r; α_0 = α_0, β_0 = β_0, kwargs...)
-				scatter(x = α_t, y = β_t, showlegend = false)
+				scatter(x = α_t, y = β_t, showlegend = false, name = "IGA Trajectory")
 			  end
 			 for (α_0, β_0) in init_points]
-	plot([mixed_nash_trace; pure_nash_traces; unit_trace; traces], Layout(yaxis_scaleanchor = "x"))
+	plot([unit_trace; traces; nash_traces], Layout(yaxis_scaleanchor = "x"))
 end
   ╠═╡ =#
 
@@ -1210,43 +1664,45 @@ function plot_iga_trajectory(r::NamedTuple, init_points::Vector{A}, lmin::T, lma
 
 	inds = findall(pure_out)
 	for ind in inds
-		α_e = T(ind[1] - 1)
+		α_e = T(2 - ind[1])
 		push!(α_es, α_e)
-		β_e = T(ind[2] - 1)
+		β_e = T(2 - ind[2])
 		push!(β_es, β_e)
 	end
 
 	α_e = rand(α_es)
 	β_e = rand(β_es)
 
-	mixed_nash_trace = if valid_mixed_nash
-		scatter(x = [α], y = [β], name = "Mixed Equilibrium", mode = "markers", marker_symbol = "star", marker_color = "blue")
-	else
-		scatter()
-	end
+	nash_traces = plot_nash_traces(r)
 
-	pure_nash_traces = if iszero(sum(pure_out))
-		[scatter()]
-	else
-		[begin
-		 	scatter(x = [a[1] - 1], y = [a[2] - 1], name = "Pure Equlibrium", mode = "markers", marker_symbol = "triangle-up", marker_color = "teal")
-		 end
-		for a in findall(pure_out)]
-	end
+	# mixed_nash_trace = if valid_mixed_nash
+	# 	scatter(x = [α], y = [β], name = "Mixed Equilibrium", mode = "markers", marker_symbol = "star", marker_color = "blue")
+	# else
+	# 	scatter()
+	# end
+
+	# pure_nash_traces = if iszero(sum(pure_out))
+	# 	[scatter()]
+	# else
+	# 	[begin
+	# 	 	scatter(x = [a[1] - 1], y = [a[2] - 1], name = "Pure Equlibrium", mode = "markers", marker_symbol = "triangle-up", marker_color = "teal")
+	# 	 end
+	# 	for a in findall(pure_out)]
+	# end
 
 	unit_trace = scatter(x = [0, 0, 1, 1, 0], y = [0, 1, 1, 0, 0], mode = "lines", line_color = "black", line_dash = "dash", line_width = 0.5, name = "unit square")
 
 	init_traces = [begin
-				  		scatter(x = [α_0], y = [β_0], showlegend = false,  marker_symbol = "x", marker_color = "black")
+				  		scatter(x = [α_0], y = [β_0], showlegend = false, name = "Initial Policy",  marker_symbol = "x", marker_color = "rgba(0, 0, 0, 0.5)")
 				   end
 				  for (α_0, β_0) in init_points]
 	
 	traces = [begin
 			 	(α_t, β_t) = calc_iga_trajectory(r, lmin, lmax, α_e, β_e; α_0 = α_0, β_0 = β_0, kwargs...)
-				scatter(x = α_t, y = β_t, showlegend = false)
+				scatter(x = α_t, y = β_t, showlegend = false, name = "IGA Trajectory")
 			  end
 			 for (α_0, β_0) in init_points]
-	plot([mixed_nash_trace; pure_nash_traces; unit_trace; init_traces; traces], Layout(yaxis_scaleanchor = "x"))
+	plot([unit_trace; init_traces; traces; nash_traces], Layout(yaxis_scaleanchor = "x"))
 end
   ╠═╡ =#
 
@@ -1419,20 +1875,35 @@ md"""
 """
 
 # ╔═╡ b802988a-48c7-4de8-b37b-95b63884f79f
+#=╠═╡
 const soccer_wolf_phc = wolf_phc(soccer_game, 0.9f0, typemax(Int64), 10_000_000; α = 1f0, α_decay = 0.99999954f0, ϵ = 0.2f0, save_history = true, l_w = 0.005f0, l_l = 0.008f0)
+  ╠═╡ =#
 
 # ╔═╡ 78e0333b-90c1-40c8-9c03-17759da296c5
+#=╠═╡
 display_soccer_statistics(soccer_wolf_phc.policies..., "WoLF-PHC", "WoLF-PHC")
+  ╠═╡ =#
+
+# ╔═╡ 692cb71b-fb78-4a27-aad8-61c2b25a29c6
+#=╠═╡
+display_soccer_statistics(soccer_wolf_phc.policies[1], soccer_value_iter.policies[2], "WoLF-PHC", "Minimax")
+  ╠═╡ =#
 
 # ╔═╡ 9515108e-2ab2-44f6-930a-05723cc4a07d
+#=╠═╡
 display_soccer_statistics(soccer_wolf_phc.policies[1], soccer_random_policy, "WoLF-PHC", "Random")
+  ╠═╡ =#
 
 # ╔═╡ e38af890-82e6-4370-b2ba-db245996cbfc
 # ╠═╡ show_logs = false
+#=╠═╡
 const π_opt_vs_wolf_phc = learn_optimal_soccer_opponent(soccer_wolf_phc.policies[1])
+  ╠═╡ =#
 
 # ╔═╡ 1f3665a0-adc7-478d-b047-8e8028a0a061
+#=╠═╡
 display_soccer_statistics(soccer_wolf_phc.policies[1], π_opt_vs_wolf_phc, "WoLF-PHC", "Optimal")
+  ╠═╡ =#
 
 # ╔═╡ 74b82807-6b28-4aee-b37a-3f6f713649d1
 md"""
@@ -1443,10 +1914,14 @@ md"""
 #add comparison plot for LBF with average performance compared to other techniques
 
 # ╔═╡ a74c712b-5458-4d87-bdba-159617d30742
+#=╠═╡
 const lbf_wolf_phc = wolf_phc(lbf_game, 0.99f0, typemax(Int64), 4_000_000; α = .02f0, ϵ = 0.05f0, save_history = true, l_w = 0.01f0, l_l = .02f0)
+  ╠═╡ =#
 
 # ╔═╡ 42a04270-323d-4d45-b025-d77694b5b982
+#=╠═╡
 runepisode(lbf_game; πs = lbf_wolf_phc.policies)
+  ╠═╡ =#
 
 # ╔═╡ 97e9a82a-87b8-479c-bc5f-d2e2a2418368
 md"""
@@ -1454,7 +1929,10 @@ md"""
 """
 
 # ╔═╡ 2cd6aa77-6828-44ef-b7d9-4f6cfc50e880
+# ╠═╡ skip_as_script = true
+#=╠═╡
 const rps_wolf_phc = wolf_phc(RockPaperScissors.non_repeated_game, 1f0, typemax(Int64), 100_000; α = .1f0, ϵ = .1f0, α_decay = 0.999997f0, save_history = true, l_w = 0.00004f0, l_l = .00008f0, save_policy_history = true, πs = ([0.5f0 0.5f0; 0.35f0 0.35f0; .15f0 .15f0], [0.5f0 0.5f0; 0.35f0 0.35f0; .15f0 .15f0]))
+  ╠═╡ =#
 
 # ╔═╡ 65977e33-220d-42f2-bbe8-e76f9310f588
 md"""
@@ -1496,29 +1974,58 @@ const gssg = create_non_repeated_game((Float32.([generalreward2.xAA generalrewar
 
 # ╔═╡ 0ec7e320-9c95-47b1-9493-8f8dbb15baa2
 #=╠═╡
-const gssg_wolf_phc = wolf_phc(gssg, 1f0, typemax(Int64), 100_000; α = .1f0, ϵ = .1f0, α_decay = 0.999997f0, save_history = true, l_w = 0.00007f0, l_l = .00008f0, save_policy_history = true)
+const gssg_wolf_phc = wolf_phc(gssg, 1f0, typemax(Int64), 500; α = .1f0, ϵ = .1f0, α_decay = 1f0, save_history = true, l_w = 0.006f0, l_l = .009f0, save_policy_history = true)
+  ╠═╡ =#
+
+# ╔═╡ 3b403324-afc2-4816-a8f1-f66c3e7a6cd2
+#=╠═╡
+const gssg_jal_am = jal_am(gssg, 1f0, typemax(Int64), 500; α = 0.1f0, ϵ = 0.01f0, α_decay = 1f0, save_history = true, save_policy_history = true)
+  ╠═╡ =#
+
+# ╔═╡ a8b79c95-261d-42a0-b619-26dc7f1aaa34
+#=╠═╡
+function plot_gssg_policy_traces(policy_history::Vector{NTuple{N, Matrix{T}}}; name = "WoLF-PHC") where {N, T<:Real}
+	αs = [a[1][1, 1] for a in policy_history]
+	βs = [a[2][1, 1] for a in policy_history]
+
+	trace = scatter(x = αs, y = βs, name = name, mode = "lines+markers", line_color = "rgba(0, 125, 255, 0.15)")
+	start_trace = scatter(x = [αs[1]], y = [βs[1]], name = "Initial Policy", mode = "markers", marker_symbol = "x", marker_color = "black")
+	unit_trace = scatter(x = [0, 0, 1, 1, 0], y = [0, 1, 1, 0, 0], mode = "lines", line_color = "black", line_dash = "dash", line_width = 0.5, name = "unit square")
+	vcat(trace, start_trace, unit_trace)
+end
   ╠═╡ =#
 
 # ╔═╡ 25a0e15d-5538-4ae4-b698-c6807edb18d4
 #=╠═╡
-function plot_gssg_policy_history(policy_history::Vector{NTuple{N, Matrix{T}}}) where {N, T<:Real}
-	αs = [a[1][1, 1] for a in policy_history]
-	βs = [a[2][1, 1] for a in policy_history]
-
-	trace = scatter(x = αs, y = βs, name = "WoLF-PHC Trajectory", line_color = "rgba(0, 0, 255, 0.25)")
-	start_trace = scatter(x = [αs[1]], y = [βs[1]], showlegend = false, mode = "markers", marker_symbol = "x", marker_color = "black")
-	unit_trace = scatter(x = [0, 0, 1, 1, 0], y = [0, 1, 1, 0, 0], mode = "lines", line_color = "black", line_dash = "dash", line_width = 0.5, name = "unit square")
-	plot([trace, unit_trace, start_trace], Layout(yaxis_scaleanchor = "x", xaxis_title = "α", yaxis_title = "β"))
+function plot_gssg_policy_history(policy_history::Vector{NTuple{N, Matrix{T}}}; kwargs...) where {N, T<:Real}
+	traces = plot_gssg_policy_traces(policy_history; kwargs...)
+	plot(traces, Layout(yaxis_scaleanchor = "x", xaxis_title = "α", yaxis_title = "β", legend_orientation = "h"))
 end
+  ╠═╡ =#
+
+# ╔═╡ b8f074b9-d88f-491a-adcc-46032e59ddd6
+#=╠═╡
+function plot_gssg_policy_history(r::NamedTuple, policy_history::Vector{NTuple{N, Matrix{T}}}; kwargs...) where {N, T<:Real}
+	nash_traces = plot_nash_traces(r)
+	traces = plot_gssg_policy_traces(policy_history; kwargs...)
+	plot(vcat(nash_traces, traces), Layout(yaxis_scaleanchor = "x", xaxis_title = "α", yaxis_title = "β", legend_orientation = "h"))
+end
+  ╠═╡ =#
+
+# ╔═╡ f705207b-16f2-453d-9d11-289776814b70
+#=╠═╡
+plot_gssg_policy_history(generalreward3, gssg_jal_am_test.policy_history; name = "JAL-AM")
   ╠═╡ =#
 
 # ╔═╡ 79f12e83-e6f7-4eb4-9ea7-30aeb334b697
 #=╠═╡
 @htl("""
 	 <div style = "display: flex;">
-	 $(plot_iga_trajectory(generalreward2, [(0.1, 0.1), (0.6, 0.9), (0.6, 0.6), (0.9, 0.9), (0.75, 0.6), (0.8, 0.2), (0.25, 0.5), (0., 0.), (0.5, 0.5), (0.2, 0.8)], 0.6, 0.9; num_steps = 10_000, κ = 0.001))
+	 $(plot_iga_trajectory(generalreward2, [(0.1, 0.1), (0.6, 0.9), (0.9, 0.9), (0.75, 0.6), (0.8, 0.2), (0.25, 0.5), (0.5, 0.5), (0.2, 0.8)], 0.6, 0.9; num_steps = 10_000, κ = 0.001))
 
-	 $(plot_gssg_policy_history(gssg_wolf_phc.policy_history))
+	 $(plot_gssg_policy_history(generalreward2, gssg_wolf_phc.policy_history))
+
+	 $(plot_gssg_policy_history(generalreward2, gssg_jal_am.policy_history; name = "JAL-AM"))
 	 </div>
 	 """)
   ╠═╡ =#
@@ -1594,6 +2101,8 @@ const rook_action_display = @htl("""
   ╠═╡ =#
 
 # ╔═╡ 065ba539-ac92-4117-a1a3-d44d21237e34
+# ╠═╡ skip_as_script = true
+#=╠═╡
 HTML("""
 <style>
 	.downarrow {
@@ -1633,47 +2142,65 @@ HTML("""
 		}
 </style>
 """)
+  ╠═╡ =#
 
 # ╔═╡ c6ca307f-9753-4b0d-8fd8-ee05086fd5ed
+# ╠═╡ skip_as_script = true
+#=╠═╡
 function join_str_vert(x::AbstractString, y::AbstractString)
 """$x
 $y"""
 end
+  ╠═╡ =#
 
 # ╔═╡ 2f8b643d-0dbb-47b3-8644-eaaa1e5410cf
+# ╠═╡ skip_as_script = true
+#=╠═╡
 join_hoz(x, y) = """$x|$y"""
+  ╠═╡ =#
 
 # ╔═╡ b8de4e87-0d28-4731-84f9-b0c8e799b9a5
+#=╠═╡
 form_str_col(v::AbstractVector{T}) where T<:Real = mapreduce(x -> string("|", round(Float64(x); sigdigits = 3), "|"), join_str_vert, v)
+  ╠═╡ =#
 
 # ╔═╡ bfd96f31-f01f-4495-bde5-2ade7dcf2525
+#=╠═╡
 function form_str_row(v::AbstractVector{T}) where T<:Real 
 	str = mapreduce(x -> round(Float64(x); sigdigits = 3), join_hoz, v)
 	"""|$str|"""
 end
+  ╠═╡ =#
 
 # ╔═╡ 445b2fca-85cf-4937-a827-88453b96dba1
+#=╠═╡
 function form_str_row(v::AbstractVector)
 	str = reduce(join_hoz, v)
 	"""|$str|"""
 end
+  ╠═╡ =#
 
 # ╔═╡ 4d8eb87e-c43b-4b55-b632-79bca14b7759
+#=╠═╡
 function form_str_mat(x::Matrix)
 	rows = [form_str_row(r) for r in eachrow(x)]
 	reduce(join_str_vert, rows)
 end
+  ╠═╡ =#
 
 # ╔═╡ ab01fea4-2da7-47c6-81e7-847ffeda8b34
 form_table_mat(x::Matrix) = form_table_mat(x, ["" for _ in 1:size(x, 2)])
 
 # ╔═╡ 6eccc26c-85a5-4ee4-90e7-874c9b670081
+#=╠═╡
 function form_table_id(n::Integer)
 	str = mapreduce(x -> "---", join_hoz, 1:n)
 	"""|$str|"""
 end
+  ╠═╡ =#
 
 # ╔═╡ cd97f119-5eeb-424c-b73a-86c525cd3787
+#=╠═╡
 function form_table_mat(x::Matrix, header::AbstractVector)
 	body = form_str_mat(x)
 	head_str = form_str_row(header)
@@ -1684,11 +2211,15 @@ function form_table_mat(x::Matrix, header::AbstractVector)
 	$body
 	""")
 end
+  ╠═╡ =#
 
 # ╔═╡ 4ff02aaf-950e-463f-9c69-306a1ca5c4b0
+#=╠═╡
 form_table_id(5)
+  ╠═╡ =#
 
 # ╔═╡ d23092be-c8b8-4723-a435-83e3e2e30650
+#=╠═╡
 function display_markdown_vector(v::AbstractVector{T}; name::AbstractString = "") where T<:Real
 	str = form_str_col(v)
 	Markdown.parse("""			   
@@ -1697,6 +2228,7 @@ function display_markdown_vector(v::AbstractVector{T}; name::AbstractString = ""
 $str				   
 """)
 end
+  ╠═╡ =#
 
 # ╔═╡ 6383ab5d-9d91-42f9-8a7f-427408ca356f
 #=╠═╡
@@ -1723,10 +2255,14 @@ form_table_mat(rand(5, 5), rand(5), rand(5))
   ╠═╡ =#
 
 # ╔═╡ 3c1bfb16-c9d9-4c88-8f0b-749526b0018e
+#=╠═╡
 display_markdown_vector(rand(5))
+  ╠═╡ =#
 
 # ╔═╡ 400aea40-3d2c-4696-b31c-3e0518341998
+#=╠═╡
 display_markdown_vector(rand(9); name= "π_A")
+  ╠═╡ =#
 
 # ╔═╡ 697e2312-c9a6-47b3-b13c-277ad4b0efb2
 md"""
@@ -1734,13 +2270,21 @@ md"""
 """
 
 # ╔═╡ 2b067fa4-3597-451b-8572-5ff877c68498
+#=╠═╡
 create_soccer_visualization() = create_soccer_visualization(soccer_random_policy, soccer_random_policy)
+  ╠═╡ =#
 
 # ╔═╡ 322d6682-05db-41cc-b6d4-42d772b051ac
+# ╠═╡ skip_as_script = true
+#=╠═╡
 plot_soccer_solution(episode_length::Integer, final_reward::Real, s::TwoPlayerSoccer.State{W, H, GH}, a::Tuple{Int64, Int64}, πs::Tuple{Matrix, Matrix}, value_functions::Tuple{Matrix, Matrix}; kwargs...) where {W, H, GH} = plot_soccer_solution(episode_length, final_reward, s, a, πs, (maximum.(eachcol(value_functions[1])), maximum.(eachcol(value_functions[2]))); kwargs...)
+  ╠═╡ =#
 
 # ╔═╡ d056d56d-3c46-4d3d-8789-e1ad4aa41bf1
+# ╠═╡ skip_as_script = true
+#=╠═╡
 plot_soccer_solution(episode_length::Integer, final_reward::Real, s::TwoPlayerSoccer.State{W, H, GH}, a::Tuple{Int64, Int64}, πs::Tuple{Matrix, Matrix}, value_function::Array; kwargs...) where {W, H, GH} = plot_soccer_solution(episode_length, final_reward, s, a, πs, (value_function, -value_function); kwargs...)
+  ╠═╡ =#
 
 # ╔═╡ 7ab9b64b-6571-4cd4-bf9f-6ad00015dac8
 #=╠═╡
@@ -1769,7 +2313,9 @@ end
   ╠═╡ =#
 
 # ╔═╡ 50357183-c467-48c9-b1c7-05d7c2a5db55
+#=╠═╡
 plot_soccer_state(i_s::Integer) = plot_soccer_state(soccer_game.states[i_s])
+  ╠═╡ =#
 
 # ╔═╡ ab3793ad-1069-4b77-a95a-4474fcd7c662
 #=╠═╡
@@ -1803,268 +2349,6 @@ function display_soccer_policy(i_a::Integer; scale = 1.0)
 	""")
 end
   ╠═╡ =#
-
-# ╔═╡ 59e334fd-0fdd-4c1c-a1e0-07777d233f6f
-md"""
-## Rock-Paper-Scissors Game
-"""
-
-# ╔═╡ 62d8a4f9-fd25-449c-acd0-7f8e34561c31
-#=╠═╡
-function plot_rps_policy_history(policy_history::AbstractVector{NTuple{2, Matrix{Float32}}})
-	l = length(policy_history)
-	r1 = [a[1][1, 1] for a in view(policy_history, 1:2:l)]
-	p1 = [a[1][2, 1] for a in view(policy_history, 1:2:l)]
-
-	r2 = [a[2][1, 1] for a in view(policy_history, 1:2:l)]
-	p2 = [a[2][2, 1] for a in view(policy_history, 1:2:l)]
-
-	tr1 = scatter(x = p1, y = r1, name = "Agent 1 Empirical", mode = "lines+markers", marker_color = "rgba(0, 120, 255, .3)")
-	tr2 = scatter(x = p2, y = r2, name = "Agent 2 Empirical", mode = "lines+markers", yaxis = "y2", xaxis = "x2", marker_color = "rgba(255, 130, 0, .3)", marker_symbol = "x")
-	tr3 = scatter(x = [0, 1], y = [1, 0], mode = "lines", line_color = "black", line_width = "1", line_dash = "dot", showlegend = false)
-	tr4 = scatter(x = [1/3], y = [1/3], mode = "markers", line_color = "rgb(0, 120, 255)", marker_symbol = "star", name = "Equilibrium Policy 1")
-	tr5 = scatter(x = [1/3], y = [1/3], mode = "markers", line_color = "rgb(255, 130, 0)", marker_symbol = "star", name = "Equilibrium Policy 2", yaxis = "y2", xaxis = "x2")
-	tickvals = 0.:0.2:1.
-	ticktext = string.(tickvals)
-
-	tickvals2 = 1.:-.2:0.
-	ticktext2 = string.(tickvals2)
-	plot([tr1, tr2, tr3, tr4, tr5], Layout(yaxis_scaleanchor = "x", yaxis2_scaleanchor = "x2", width = 600, xaxis = attr(tickvals = tickvals, ticktext = ticktext, title = "π(Rock)", range = [0, 1]), yaxis = attr(tickvals = tickvals, title = "π(Paper)", range = [0, 1]), yaxis2 = attr(range = [1, 0], side = "right", tickvals = tickvals, overlaying = "y", ticktext = ticktext), xaxis2 = attr(side = "top", overlaying = "x", range = [1, 0], tickvals = tickvals), legend_x = 1.1))
-end
-  ╠═╡ =#
-
-# ╔═╡ 5eb49614-6762-4544-9bf1-bcfa3af62646
-#=╠═╡
-plot_rps_policy_history(jal_am_rps.policy_history)
-  ╠═╡ =#
-
-# ╔═╡ 36dfd0bf-b73c-472e-ad18-79383c10993c
-#=╠═╡
-plot_rps_policy_history(view(rps_wolf_phc.policy_history, 1:500:60_000))
-  ╠═╡ =#
-
-# ╔═╡ 5eba10e9-b545-4a81-8158-39c18c8bf591
-md"""
-## Level-Based Foraging Game
-"""
-
-# ╔═╡ 1ecb22b8-faeb-4a64-97c7-772246859e43
-#=╠═╡
-function plot_episode_rewards(v::Vector{T}, n::Integer) where T<:Real
-	inds = [i for i in n+1:n:length(v)]
-	r_avg = inv.([mean(v[i-n:i]) for i in n+1:n:length(v)])
-	tr = scatter(x = inds, y = r_avg, mode = "lines+markers")
-	plot(tr, Layout(xaxis_title = "Environment time steps", yaxis_title = "Average Steps Over Last $n Episodes", yaxis_type = "log"))
-end
-  ╠═╡ =#
-
-# ╔═╡ 83fc4ba4-da51-4092-92fa-cc3289df410c
-#=╠═╡
-function plot_episode_rewards(vs::Vector{Vector{T}}, names::Vector{String}, n::Integer) where T<:Real
-	traces = [begin
-		inds = [i for i in n+1:n:length(v)]
-		r_avg = inv.([mean(v[i-n:i]) for i in n+1:n:length(v)])
-		tr = scatter(x = inds, y = r_avg, mode = "lines+markers", name = names[j])
-	end
-	for (j, v) in enumerate(vs)]
-	plot(traces, Layout(xaxis_title = "Environment time steps", yaxis_title = "Average Steps Over Last $n Episodes", yaxis_type = "log"))
-end
-  ╠═╡ =#
-
-# ╔═╡ cd31f074-dd9f-47ec-90f0-d2113ae08fa2
-#=╠═╡
-plot_episode_rewards([lbf_cql_stats, lbf_iql_stats, lbf_jal_am_stats], ["CQL", "IQL", "JAL-AM"], 10_000)
-  ╠═╡ =#
-
-# ╔═╡ 9d54ee68-d60c-11f0-87d1-3be62822741b
-md"""
-# Dependencies
-"""
-
-# ╔═╡ a929c6cc-733b-44a1-bdbd-40a525bb5ffd
-import HiGHS
-
-# ╔═╡ 7b07aa13-b39a-4874-9de4-037685001e24
-begin
-	function solve_minimax_game!(reward_matrix::Matrix{T}, π::Matrix{T}, m::Array{T, 3}, i_s::Integer, player1::Bool) where T<:Real
-		model = Model(HiGHS.Optimizer)
-		(l, k) = size(reward_matrix)
-
-		min_reward = typemax(T)
-		@inbounds @simd for i_a1 in 1:l for i_a2 in 1:k
-			r = -m[i_a1, i_a2, i_s]
-			min_reward = min(r, min_reward)
-			reward_matrix[i_a1, i_a2] = r
-		end end
-
-		reward_matrix .-= min_reward
-
-		x_length = player1 ? l : k
-
-		@variable(model, x[1:x_length])
-
-		if player1
-			@constraint(model, x' * reward_matrix .≤ one(T))
-		else
-			@constraint(model, reward_matrix * x .≤ one(T))
-		end
-		
-		@constraint(model, x .>= zero(T))
-		@objective(model, Max, sum(x))
-		optimize!(model)
-		modified_game_value = inv(sum(value.(x)))
-		@inbounds @simd for i in 1:x_length
-			π[i, i_s] = value(x[i]) * modified_game_value
-		end
-		
-		-(modified_game_value + min_reward)
-	end
-
-	function solve_minimax_game!(reward_matrix::Matrix{T}, π::Matrix{T}, model::Model, x::Vector{VariableRef}, m::Array{T, 3}, i_s::Integer, player1::Bool) where T<:Real
-		
-		(l, k) = size(reward_matrix)
-		x_length = player1 ? l : k
-
-		c = (!player1 - player1)
-
-		if all(x -> isapprox(x, zero(T); atol = eps(one(T))), view(m, :, :, i_s)) 
-			p = one(T) / x_length
-			@inbounds @simd for i in 1:x_length
-				π[i, i_s] = p
-			end
-			return zero(T)
-		end
-
-		min_reward = typemax(T)
-		@inbounds @simd for i_a1 in 1:l for i_a2 in 1:k
-			r = c*m[i_a1, i_a2, i_s]
-			min_reward = min(r, min_reward)
-			reward_matrix[i_a1, i_a2] = r
-		end end
-
-		reward_matrix .-= (min_reward - one(T))
-
-		if all(x -> isapprox(x, reward_matrix[1]; atol = eps(one(T))), reward_matrix) 
-			p = one(T) / x_length
-			@inbounds @simd for i in 1:x_length
-				π[i, i_s] = p
-			end
-			return -reward_matrix[1]
-		end
-
-		if player1
-			@constraint(model, con_s, x' * reward_matrix .≤ one(T))
-		else
-			@constraint(model, con_s, reward_matrix * x .≤ one(T))
-		end
-		
-		optimize!(model)
-		modified_game_value = inv(sum(value.(x)))
-		@inbounds @simd for i in 1:x_length
-			π[i, i_s] = max(zero(T), value(x[i]) * modified_game_value)
-		end
-
-		for c in con_s
-			delete(model, c)
-		end
-		unregister(model, :con_s)
-		
-		-(modified_game_value + min_reward - one(T))
-	end
-end
-
-# ╔═╡ 2eb915ed-16c2-4ea0-bf5f-5d1456249224
-function value_iteration_game!(v_est::Vector{T}, πs::NTuple{2, Matrix{T}}, m_est::Array{T, 3}, ptf::TabularZeroSumGameTransition{T, ST, RT}, γ::T, nmax::Integer; show_message::Bool = true, θ::T = eps(zero(T))) where {T<:Real, ST, RT}
-	(l, k, num_states) = size(m_est)
-	reward_matrix = zeros(T, l, k)
-
-	delta_max = typemax(T)
-	sweep = 0
-	
-	state_transitions = ptf.state_transition_map
-	reward_transitions = ptf.reward_transition_map
-
-	#setup two models, one for each player, since in general the available actions could differ from one player to another
-	model1 = Model(HiGHS.Optimizer)
-	model2 = Model(HiGHS.Optimizer)
-
-	@variable(model1, x[1:l])
-	@constraint(model1, x .>= zero(T))
-	@objective(model1, Max, sum(x))
-
-	@variable(model2, y[1:k])
-	@constraint(model2, y .>= zero(T))
-	@objective(model2, Max, sum(y))
-
-	while (sweep < nmax) && (delta_max > θ)
-		for (i, inds) in enumerate(CartesianIndices(state_transitions))
-			a = (inds[1], inds[2])
-			i_s = inds[3]
-			v = bellman_game_reward_value(ptf, i_s, a, γ, v_est)
-			# if !iszero(v1)
-			# 	@info "Non zero game value updated for player 1 state $i_s"
-			# end
-
-			# if !iszero(v2)
-			# 	@info "Non zero game value updated for player2 state $i_s"
-			# end
-			
-			m_est[i] = v
-		end
-
-		delta_max = typemin(T)
-		for i_s in eachindex(v_est)
-			v_old = v_est[i_s]
-			v_est[i_s] = solve_minimax_game!(reward_matrix, πs[1], model1, x, m_est, i_s, true)
-			
-			delta_max = max(TabularRL.calc_pct_change(v_old, v_est[i_s]), delta_max)
-		end
-		sweep += 1
-		show_message && @info "After $(sweep) sweeps, maximum value change is $delta_max"
-	end
-
-	for i_s in eachindex(v_est)
-		solve_minimax_game!(reward_matrix, πs[2], model2, y, m_est, i_s, false)
-	end
-
-	return (values = v_est, total_sweeps = sweep, policies = πs, game_rewards = m_est)
-end
-
-# ╔═╡ af0265b8-7fe9-499a-b675-32bf5ba76f64
-begin
-	value_iteration_game(ptf::TabularZeroSumGameTransition{T, ST, RT}, γ::T; nmax::Integer = typemax(Int64), dims::NTuple{3, Int64} = size(ptf.state_transition_map), v_est::Vector{T} = zeros(T, dims[3]), πs::NTuple{2, Matrix{T}} = (zeros(T, dims[1], dims[3]), zeros(T, dims[2], dims[3])), m_est::Array{T, 3} = zeros(T, dims...), kwargs...) where {T<:Real, RT, ST} = value_iteration_game!(v_est, πs, m_est, ptf, γ, nmax; kwargs...)
-
-	value_iteration_game(game::TabularStochasticGame, γ::T; kwargs...) where {T<:Real} = value_iteration_game(game.ptf, γ; kwargs...)
-end
-
-# ╔═╡ 439fff54-57e8-409e-994e-55e536d2ea0b
-# ╠═╡ show_logs = false
-const soccer_value_iter = value_iteration_game(soccer_game, 0.9f0; θ = 1f-5)
-
-# ╔═╡ 30d70205-a091-4155-87f5-d0ada3b597e0
-const minimax_vs_minimax_stats = display_soccer_statistics(soccer_value_iter.policies..., "Minimax", "Minimax"; ntrials = 1_000_000)
-
-# ╔═╡ 19d9e4b3-2c6b-4f33-a5be-32aa4a38513a
-const minimax_vs_random_stats = display_soccer_statistics(soccer_value_iter.policies[1], soccer_random_policy, "Minimax", "Random")
-
-# ╔═╡ 84fdc00e-43d1-44c4-b479-d7be79c2d4cd
-const random_vs_minimax_stats = display_soccer_statistics(soccer_random_policy, soccer_value_iter.policies[2], "Random", "Minimax")
-
-# ╔═╡ 0fc4963b-2100-4b5d-a663-1c5306f311ca
-const iql_vs_minimax_stats = display_soccer_statistics(soccer_iql.policies[1], soccer_value_iter.policies[2], "IQL", "Minimax")
-
-# ╔═╡ 04206908-3e01-4541-be59-92e7e4dca793
-# ╠═╡ show_logs = false
-const π_opt_vs_minimax = learn_optimal_soccer_opponent(soccer_value_iter.policies[1])
-
-# ╔═╡ a07e2a13-a9d5-4558-8f63-b15a73838b1e
-display_soccer_statistics(soccer_value_iter.policies[1], π_opt_vs_minimax, "Minimax", "Optimal"; ntrials = 1_000_000)
-
-# ╔═╡ ce4b2377-45e2-421d-b457-c40aaabee4e4
-display_soccer_statistics(soccer_jal_am.policies[1], soccer_value_iter.policies[2], "JAL-AM", "Minimax")
-
-# ╔═╡ 692cb71b-fb78-4a27-aad8-61c2b25a29c6
-display_soccer_statistics(soccer_wolf_phc.policies[1], soccer_value_iter.policies[2], "WoLF-PHC", "Minimax")
 
 # ╔═╡ 7ba3754f-4a2d-4f87-a303-e37ea2376947
 #=╠═╡
@@ -2294,6 +2578,51 @@ const soccer_minimax_vs_random_viz = create_soccer_visualization(soccer_value_it
 soccer_minimax_vs_random_viz.plot_function(minimax_vs_random_step; show_minimax = true)
   ╠═╡ =#
 
+# ╔═╡ a2f8445e-8b83-4903-b829-15b997e4c3fc
+#=╠═╡
+const soccer_jal_viz = create_soccer_visualization(soccer_jal.policies...)
+  ╠═╡ =#
+
+# ╔═╡ 98f6ddc3-c534-4ba2-bce6-97b29e1428e4
+#=╠═╡
+@bind soccer_jal_step soccer_jal_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ a3fd5c60-105c-4c9d-909f-0a0af6c592c3
+#=╠═╡
+soccer_jal_viz.plot_function(soccer_jal_step; show_minimax=true, minimax2 = true, game_rewards = soccer_jal.joint_action_values, πs = soccer_jal.policies, values = jal_values, str = "Minimax Q πs")
+  ╠═╡ =#
+
+# ╔═╡ 46060259-a774-4ff1-b415-27a5c6e9fa40
+#=╠═╡
+const soccer_jal_vs_random_viz = create_soccer_visualization(soccer_jal.policies[1], soccer_random_policy)
+  ╠═╡ =#
+
+# ╔═╡ 59461d31-4d11-4802-8e58-996a0fa7bf67
+#=╠═╡
+@bind soccer_jal_vs_random_step soccer_jal_vs_random_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ 0bb09a54-4d4b-472d-86cc-133a9d73349c
+#=╠═╡
+soccer_jal_vs_random_viz.plot_function(soccer_jal_vs_random_step)
+  ╠═╡ =#
+
+# ╔═╡ 349e7689-24bd-467d-a7f0-73332fc93118
+#=╠═╡
+const soccer_jal_vs_minimax_viz = create_soccer_visualization(soccer_jal.policies[1], soccer_value_iter.policies[2])
+  ╠═╡ =#
+
+# ╔═╡ 1e15c352-c684-49ff-bbff-3cfeac7b41f6
+#=╠═╡
+@bind soccer_jal_vs_minimax_step soccer_jal_vs_minimax_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ ffbd79f9-ac31-4ff4-ab8d-7c8603dfedf6
+#=╠═╡
+soccer_jal_vs_minimax_viz.plot_function(soccer_jal_vs_minimax_step; show_minimax=true, minimax2 = true, game_rewards = soccer_jal.joint_action_values, πs = soccer_jal.policies, values = jal_values, str = "Minimax Q πs")
+  ╠═╡ =#
+
 # ╔═╡ feb35b37-c99f-40b7-b181-a86038a8ed92
 #=╠═╡
 iql_viz = create_soccer_visualization(soccer_iql.policies..., soccer_iql.value_estimates)
@@ -2337,6 +2666,21 @@ minimax_vs_optimal_viz = create_soccer_visualization(soccer_value_iter.policies[
 # ╔═╡ b1f4df52-2049-43e6-bc46-fe7e192e74ca
 #=╠═╡
 minimax_vs_optimal_viz.plot_function(minimax_vs_optimal_step; show_minimax=true)
+  ╠═╡ =#
+
+# ╔═╡ cf478f51-42df-4f1f-a666-b470afe28767
+#=╠═╡
+soccer_jal_vs_optimal_viz = create_soccer_visualization(soccer_jal.policies[1], π_opt_vs_jal)
+  ╠═╡ =#
+
+# ╔═╡ c110a6fc-e2a2-4d26-822e-6cfe799ee687
+#=╠═╡
+@bind jal_vs_optimal_step soccer_jal_vs_optimal_viz.slider
+  ╠═╡ =#
+
+# ╔═╡ dc1b48f8-54ec-46e1-84b5-d5ac5c276390
+#=╠═╡
+soccer_jal_vs_optimal_viz.plot_function(jal_vs_optimal_step; show_minimax=true)
   ╠═╡ =#
 
 # ╔═╡ cd3bb7ba-3560-40a9-b166-7cb5cb23f316
@@ -2384,186 +2728,98 @@ viz_test = create_soccer_visualization(soccer_value_iter.policies..., soccer_val
 viz_test.plot_function(test_step; show_minimax = true)
   ╠═╡ =#
 
-# ╔═╡ 95a3fcca-1f0c-49e9-9e9c-b1bea8cb76c4
-#joint action learning with game theory
-function jal_gt!(q_est::Array{T, 3}, πs::NTuple{2, Matrix{T}}, game::TabularStochasticGame{T, S, A, 2, P, F}, γ::T, max_episodes::Integer, max_steps::Integer; α::T = one(T) / 10, ϵ::T = one(T) / 10, α_decay::T = one(T)) where {T<:Real, S, A, P<:AbstractTabularZeroSumGameTransition{T}, F<:Function}
-	ep = 1
-	step = 1
-	i_s = game.initialize_state_index()
-	a = [0, 0]
-	(l, k, num_states) = size(q_est)
-	reward_matrix = zeros(T, l, k)
+# ╔═╡ 59e334fd-0fdd-4c1c-a1e0-07777d233f6f
+md"""
+## Rock-Paper-Scissors Game
+"""
 
-	model1 = Model(HiGHS.Optimizer)
-	model2 = Model(HiGHS.Optimizer)
+# ╔═╡ 62d8a4f9-fd25-449c-acd0-7f8e34561c31
+#=╠═╡
+function plot_rps_policy_history(policy_history::AbstractVector{NTuple{2, Matrix{Float32}}})
+	l = length(policy_history)
+	r1 = [a[1][1, 1] for a in view(policy_history, 1:2:l)]
+	p1 = [a[1][2, 1] for a in view(policy_history, 1:2:l)]
 
-	@variable(model1, x[1:l])
-	@constraint(model1, x .>= zero(T))
-	@objective(model1, Max, sum(x))
+	r2 = [a[2][1, 1] for a in view(policy_history, 1:2:l)]
+	p2 = [a[2][2, 1] for a in view(policy_history, 1:2:l)]
 
-	@variable(model2, y[1:k])
-	@constraint(model2, y .>= zero(T))
-	@objective(model2, Max, sum(y))
+	tr1 = scatter(x = p1, y = r1, name = "Agent 1 Empirical", mode = "lines+markers", marker_color = "rgba(0, 120, 255, .3)")
+	tr2 = scatter(x = p2, y = r2, name = "Agent 2 Empirical", mode = "lines+markers", yaxis = "y2", xaxis = "x2", marker_color = "rgba(255, 130, 0, .3)", marker_symbol = "x")
+	tr3 = scatter(x = [0, 1], y = [1, 0], mode = "lines", line_color = "black", line_width = "1", line_dash = "dot", showlegend = false)
+	tr4 = scatter(x = [1/3], y = [1/3], mode = "markers", line_color = "rgb(0, 120, 255)", marker_symbol = "star", name = "Equilibrium Policy 1")
+	tr5 = scatter(x = [1/3], y = [1/3], mode = "markers", line_color = "rgb(255, 130, 0)", marker_symbol = "star", name = "Equilibrium Policy 2", yaxis = "y2", xaxis = "x2")
+	tickvals = 0.:0.2:1.
+	ticktext = string.(tickvals)
 
-	α_step = α
-	
-	while (ep <= max_episodes) && (step <= max_steps)
-		if rand() < ϵ
-			a[1] = rand(eachindex(game.agent_actions[1]))
-		else
-			# solve_minimax_game!(reward_matrix, πs[1], model1, x, q_est, i_s, true)
-			a[1] = sample_action(πs[1], i_s)
-		end
-
-		if rand() < ϵ
-			a[2] = rand(eachindex(game.agent_actions[2]))
-		else
-			solve_minimax_game!(reward_matrix, πs[2], model2, y, q_est, i_s, false)
-			a[2] = sample_action(πs[2], i_s)
-		end
-
-		(r, i_s′) = game.ptf(i_s, NTuple{2, Int64}(a))
-
-		if game.terminal_states[i_s′]
-			game_state_value = zero(T)
-			i_s′ = game.initialize_state_index()
-			solve_minimax_game!(reward_matrix, πs[1], model1, x, q_est, i_s′, true)
-			ep += 1
-		else
-			game_state_value = solve_minimax_game!(reward_matrix, πs[1], model1, x, q_est, i_s′, true)
-		end
-
-		
-		target = r + γ*game_state_value
-		δ = target - q_est[a[1], a[2], i_s]
-		q_est[a[1], a[2], i_s] += α_step * δ
-
-		i_s = i_s′
-		step += 1
-		α_step *= α_decay
-	end
-
-	for i_s in eachindex(game.states)
-		solve_minimax_game!(reward_matrix, πs[1], model1, x, q_est, i_s, true)
-		solve_minimax_game!(reward_matrix, πs[2], model2, y, q_est, i_s, false)
-	end
-	
-	return (joint_action_values = q_est, policies = πs)
-end	
-
-# ╔═╡ b0ef6a1d-cb67-44a3-b8da-4f56930f85d7
-begin
-	jal_gt(game::TabularStochasticGame{T, S, A, 2, P, F}, γ::T, max_episodes::Integer, max_steps::Integer; init_value::T = zero(T), q_est::Array{T, 3} = ones(T, length(game.agent_actions[1]), length(game.agent_actions[2]), length(game.states)) .* init_value, πs::NTuple{2, Matrix{T}} = make_random_policies(game), kwargs...) where {T<:Real, S, A, P<:AbstractTabularZeroSumGameTransition{T}, F<:Function} = 
-	jal_gt!(q_est, πs, game, γ, max_episodes, max_steps; kwargs...)
+	tickvals2 = 1.:-.2:0.
+	ticktext2 = string.(tickvals2)
+	plot([tr1, tr2, tr3, tr4, tr5], Layout(yaxis_scaleanchor = "x", yaxis2_scaleanchor = "x2", width = 600, xaxis = attr(tickvals = tickvals, ticktext = ticktext, title = "π(Rock)", range = [0, 1]), yaxis = attr(tickvals = tickvals, title = "π(Paper)", range = [0, 1]), yaxis2 = attr(range = [1, 0], side = "right", tickvals = tickvals, overlaying = "y", ticktext = ticktext), xaxis2 = attr(side = "top", overlaying = "x", range = [1, 0], tickvals = tickvals), legend_x = 1.1))
 end
-
-# ╔═╡ e12a9ce4-1441-4863-9e31-19d04f512c61
-# ╠═╡ show_logs = false
-const soccer_jal = jal_gt(soccer_game, 0.9f0, typemax(Int64), 1_000_000; α = 1f0, ϵ = 0.2f0, α_decay = 0.9999954f0)
-
-# ╔═╡ 5906e0f9-eaf6-44f0-bfee-fdb4dd02f08b
-const jal_values = [soccer_jal.joint_action_values[:, :, i_s] .* (soccer_jal.policies[1][:, i_s] * soccer_jal.policies[2][:, i_s]') |> sum for i_s in eachindex(soccer_game.states)]
-
-# ╔═╡ a86d8b48-6619-4f92-aa17-17e3c4a5f4f7
-const soccer_jal_stats = display_soccer_statistics(soccer_jal.policies..., "Minimax Q", "Minimax Q")
-
-# ╔═╡ a2f8445e-8b83-4903-b829-15b997e4c3fc
-#=╠═╡
-const soccer_jal_viz = create_soccer_visualization(soccer_jal.policies...)
   ╠═╡ =#
 
-# ╔═╡ 98f6ddc3-c534-4ba2-bce6-97b29e1428e4
+# ╔═╡ 5eb49614-6762-4544-9bf1-bcfa3af62646
 #=╠═╡
-@bind soccer_jal_step soccer_jal_viz.slider
+plot_rps_policy_history(jal_am_rps.policy_history)
   ╠═╡ =#
 
-# ╔═╡ a3fd5c60-105c-4c9d-909f-0a0af6c592c3
+# ╔═╡ 36dfd0bf-b73c-472e-ad18-79383c10993c
 #=╠═╡
-soccer_jal_viz.plot_function(soccer_jal_step; show_minimax=true, minimax2 = true, game_rewards = soccer_jal.joint_action_values, πs = soccer_jal.policies, values = jal_values, str = "Minimax Q πs")
+plot_rps_policy_history(view(rps_wolf_phc.policy_history, 1:500:60_000))
   ╠═╡ =#
 
-# ╔═╡ 1eaed379-6f4d-4634-aea6-a5b1941389d4
-const soccer_jal_vs_random_stats = display_soccer_statistics(soccer_jal.policies[1], soccer_random_policy, "Minimax Q", "Random")
+# ╔═╡ 5eba10e9-b545-4a81-8158-39c18c8bf591
+md"""
+## Level-Based Foraging Game
+"""
 
-# ╔═╡ f6ea001e-38f6-428c-a107-4ddcf817f470
-(exact_solution = minimax_vs_random_stats, estimated_solution = soccer_jal_vs_random_stats)
-
-# ╔═╡ 46060259-a774-4ff1-b415-27a5c6e9fa40
+# ╔═╡ 1ecb22b8-faeb-4a64-97c7-772246859e43
 #=╠═╡
-const soccer_jal_vs_random_viz = create_soccer_visualization(soccer_jal.policies[1], soccer_random_policy)
+function plot_episode_rewards(v::Vector{T}, n::Integer) where T<:Real
+	inds = [i for i in n+1:n:length(v)]
+	r_avg = inv.([mean(v[i-n:i]) for i in n+1:n:length(v)])
+	tr = scatter(x = inds, y = r_avg, mode = "lines+markers")
+	plot(tr, Layout(xaxis_title = "Environment time steps", yaxis_title = "Average Steps Over Last $n Episodes", yaxis_type = "log"))
+end
   ╠═╡ =#
 
-# ╔═╡ 59461d31-4d11-4802-8e58-996a0fa7bf67
+# ╔═╡ 83fc4ba4-da51-4092-92fa-cc3289df410c
 #=╠═╡
-@bind soccer_jal_vs_random_step soccer_jal_vs_random_viz.slider
+function plot_episode_rewards(vs::Vector{Vector{T}}, names::Vector{String}, n::Integer) where T<:Real
+	traces = [begin
+		inds = [i for i in n+1:n:length(v)]
+		r_avg = inv.([mean(v[i-n:i]) for i in n+1:n:length(v)])
+		tr = scatter(x = inds, y = r_avg, mode = "lines+markers", name = names[j])
+	end
+	for (j, v) in enumerate(vs)]
+	plot(traces, Layout(xaxis_title = "Environment time steps", yaxis_title = "Average Steps Over Last $n Episodes", yaxis_type = "log"))
+end
   ╠═╡ =#
 
-# ╔═╡ 0bb09a54-4d4b-472d-86cc-133a9d73349c
+# ╔═╡ cd31f074-dd9f-47ec-90f0-d2113ae08fa2
 #=╠═╡
-soccer_jal_vs_random_viz.plot_function(soccer_jal_vs_random_step)
+plot_episode_rewards([lbf_cql_stats, lbf_iql_stats, lbf_jal_am_stats], ["CQL", "IQL", "JAL-AM"], 10_000)
   ╠═╡ =#
 
-# ╔═╡ fb3e4d0f-bc6c-45a2-9491-225ef7b8f647
-const soccer_jal_vs_minimax_stats = display_soccer_statistics(soccer_jal.policies[1], soccer_value_iter.policies[2], "Minimax Q", "Minimax")
-
-# ╔═╡ 349e7689-24bd-467d-a7f0-73332fc93118
-#=╠═╡
-const soccer_jal_vs_minimax_viz = create_soccer_visualization(soccer_jal.policies[1], soccer_value_iter.policies[2])
-  ╠═╡ =#
-
-# ╔═╡ 1e15c352-c684-49ff-bbff-3cfeac7b41f6
-#=╠═╡
-@bind soccer_jal_vs_minimax_step soccer_jal_vs_minimax_viz.slider
-  ╠═╡ =#
-
-# ╔═╡ ffbd79f9-ac31-4ff4-ab8d-7c8603dfedf6
-#=╠═╡
-soccer_jal_vs_minimax_viz.plot_function(soccer_jal_vs_minimax_step; show_minimax=true, minimax2 = true, game_rewards = soccer_jal.joint_action_values, πs = soccer_jal.policies, values = jal_values, str = "Minimax Q πs")
-  ╠═╡ =#
-
-# ╔═╡ 879e7384-7786-43b2-a36f-229929e802cf
-const iql_vs_jal_stats = display_soccer_statistics(soccer_iql.policies[1], soccer_jal.policies[2], "IQL", "Minimax Q")
-
-# ╔═╡ 32bc7859-7503-46c6-b8e0-2c3c22b2acc9
-const soccer_jal_vs_optimal = independent_q_learning(soccer_game, 0.9f0; α = 1f0, max_steps = 1_000_000, πs = (soccer_jal.policies[1], copy(soccer_random_policy)), train_policies = 2:2, save_history = true, ϵ = 0.2f0, α_decay = 0.9999954f0)
-
-# ╔═╡ fb9eaf3f-d7ad-403a-98fc-64098df10737
-# ╠═╡ show_logs = false
-const π_opt_vs_jal = learn_optimal_soccer_opponent(soccer_jal.policies[1])
-
-# ╔═╡ f5d89ff7-0fba-49d5-b7a3-eb9a0bc84f8d
-const jal_vs_optimal_stats = display_soccer_statistics(soccer_jal.policies[1], π_opt_vs_jal, "Minimax Q", "Optimal")
-
-# ╔═╡ cf478f51-42df-4f1f-a666-b470afe28767
-#=╠═╡
-soccer_jal_vs_optimal_viz = create_soccer_visualization(soccer_jal.policies[1], π_opt_vs_jal)
-  ╠═╡ =#
-
-# ╔═╡ c110a6fc-e2a2-4d26-822e-6cfe799ee687
-#=╠═╡
-@bind jal_vs_optimal_step soccer_jal_vs_optimal_viz.slider
-  ╠═╡ =#
-
-# ╔═╡ dc1b48f8-54ec-46e1-84b5-d5ac5c276390
-#=╠═╡
-soccer_jal_vs_optimal_viz.plot_function(jal_vs_optimal_step; show_minimax=true)
-  ╠═╡ =#
-
-# ╔═╡ f959e7c8-7c3b-4c91-b3f1-3f8934d1e12f
-jal_gt(RockPaperScissors.non_repeated_game, 1f0, typemax(Int64), 500; α = 0.1f0)
+# ╔═╡ 9d54ee68-d60c-11f0-87d1-3be62822741b
+md"""
+# Dependencies
+"""
 
 # ╔═╡ 0de23d03-fc68-4b8b-9d0a-468e40ceee9a
+# ╠═╡ skip_as_script = true
+#=╠═╡
 html"""
 <style>
 	main {
 		margin: 0 auto;
 		max-width: min(1600px, 90%);
-		padding-left: max(50px, 10%);
-		padding-right: max(10px, 5%);
+		padding-left: max(50px, 5%);
+		padding-right: max(200px, 5%);
 		font-size: max(10px, min(24px, 2vw));
 	}
 </style>
 """
+  ╠═╡ =#
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -2571,6 +2827,7 @@ PLUTO_PROJECT_TOML_CONTENTS = """
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 HiGHS = "87dc4568-4c63-4d18-b0c0-bb2238e4078b"
 HypertextLiteral = "ac1192a8-f4b3-4bfe-ba22-af5b92cd3ab2"
@@ -2585,6 +2842,7 @@ PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 BenchmarkTools = "~1.6.3"
 CSV = "~0.10.15"
 DataFrames = "~1.8.1"
+DataStructures = "~0.19.3"
 HiGHS = "~1.18.1"
 HypertextLiteral = "~0.9.5"
 JuMP = "~1.29.3"
@@ -2592,16 +2850,16 @@ LaTeXStrings = "~1.4.0"
 PlutoDevMacros = "~0.9.2"
 PlutoPlotly = "~0.6.5"
 PlutoProfile = "~0.4.0"
-PlutoUI = "~0.7.75"
+PlutoUI = "~0.7.79"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.12.3"
+julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "23981a06a3b41b40e40bf9ba709fc6f6e77421b6"
+project_hash = "cc610282e636a96afa438dd41e794dc547e11416"
 
 [[deps.AbstractPlutoDingetjes]]
 deps = ["Pkg"]
@@ -2773,9 +3031,9 @@ version = "1.7.0"
 
 [[deps.FileIO]]
 deps = ["Pkg", "Requires", "UUIDs"]
-git-tree-sha1 = "d60eb76f37d7e5a40cc2e7c36974d864b82dc802"
+git-tree-sha1 = "6522cfb3b8fe97bec632252263057996cbd3de20"
 uuid = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
-version = "1.17.1"
+version = "1.18.0"
 
     [deps.FileIO.extensions]
     HTTPExt = "HTTP"
@@ -2812,9 +3070,9 @@ version = "0.2.10"
 
 [[deps.ForwardDiff]]
 deps = ["CommonSubexpressions", "DiffResults", "DiffRules", "LinearAlgebra", "LogExpFunctions", "NaNMath", "Preferences", "Printf", "Random", "SpecialFunctions"]
-git-tree-sha1 = "cd33c7538e68650bd0ddbb3f5bd50a4a0fa95b50"
+git-tree-sha1 = "eef4c86803f47dcb61e9b8790ecaa96956fdd8ae"
 uuid = "f6369f11-7733-5829-9624-2563aa707210"
-version = "1.3.0"
+version = "1.3.2"
 
     [deps.ForwardDiff.extensions]
     ForwardDiffStaticArraysExt = "StaticArrays"
@@ -3045,7 +3303,7 @@ version = "1.11.0"
 
 [[deps.MozillaCACerts_jll]]
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
-version = "2025.5.20"
+version = "2025.11.4"
 
 [[deps.MutableArithmetics]]
 deps = ["LinearAlgebra", "SparseArrays", "Test"]
@@ -3112,9 +3370,9 @@ weakdeps = ["REPL"]
 
 [[deps.PlotlyBase]]
 deps = ["ColorSchemes", "Colors", "Dates", "DelimitedFiles", "DocStringExtensions", "JSON", "LaTeXStrings", "Logging", "Parameters", "Pkg", "REPL", "Requires", "Statistics", "UUIDs"]
-git-tree-sha1 = "49c457ee4c9c6f5bdf2f6f1a69e66976aaecfcdb"
+git-tree-sha1 = "6256ab3ee24ef079b3afa310593817e069925eeb"
 uuid = "a03496cd-edff-5a9b-9e67-9cda94a718b5"
-version = "0.8.22"
+version = "0.8.23"
 
     [deps.PlotlyBase.extensions]
     DataFramesExt = "DataFrames"
@@ -3155,10 +3413,10 @@ uuid = "ee419aa8-929d-45cd-acf6-76bd043cd7ba"
 version = "0.4.0"
 
 [[deps.PlutoUI]]
-deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "Downloads", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
-git-tree-sha1 = "db8a06ef983af758d285665a0398703eb5bc1d66"
+deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "Downloads", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
+git-tree-sha1 = "3ac7038a98ef6977d44adeadc73cc6f596c08109"
 uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
-version = "0.7.75"
+version = "0.7.79"
 
 [[deps.PooledArrays]]
 deps = ["DataAPI", "Future"]
@@ -3174,9 +3432,9 @@ version = "1.3.3"
 
 [[deps.Preferences]]
 deps = ["TOML"]
-git-tree-sha1 = "0f27480397253da18fe2c12a4ba4eb9eb208bf3d"
+git-tree-sha1 = "522f093a29b31a93e34eaea17ba055d850edea28"
 uuid = "21216c6a-2e73-6563-6e65-726566657250"
-version = "1.5.0"
+version = "1.5.1"
 
 [[deps.PrettyTables]]
 deps = ["Crayons", "LaTeXStrings", "Markdown", "PrecompileTools", "Printf", "REPL", "Reexport", "StringManipulation", "Tables"]
@@ -3239,9 +3497,9 @@ version = "1.3.0"
 
 [[deps.SentinelArrays]]
 deps = ["Dates", "Random"]
-git-tree-sha1 = "712fb0231ee6f9120e005ccd56297abbc053e7e0"
+git-tree-sha1 = "ebe7e59b37c400f694f52b58c93d26201387da70"
 uuid = "91c51154-3ec4-41a3-a24f-3f23e20d615c"
-version = "1.4.8"
+version = "1.4.9"
 
 [[deps.Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
@@ -3428,7 +3686,6 @@ version = "17.7.0+0"
 # ╠═54db08a2-b7c5-4311-8bca-fce64d665563
 # ╠═2eb915ed-16c2-4ea0-bf5f-5d1456249224
 # ╠═af0265b8-7fe9-499a-b675-32bf5ba76f64
-# ╠═b8b66510-e829-44cf-bb64-3d99d481917c
 # ╟─fe077be2-467e-43a7-8729-3f3d48b8c91b
 # ╠═439fff54-57e8-409e-994e-55e536d2ea0b
 # ╟─9a615e94-6be8-47f5-aa38-91088f3accc3
@@ -3470,7 +3727,6 @@ version = "17.7.0+0"
 # ╠═ffbd79f9-ac31-4ff4-ab8d-7c8603dfedf6
 # ╟─dfd93d6c-da3a-4f02-b8a4-6ebec3dc8284
 # ╟─0ecea737-6b46-4e59-94d3-d12680e48b4e
-# ╠═df15815e-154e-4738-8594-e1413ebd73e9
 # ╠═f959e7c8-7c3b-4c91-b3f1-3f8934d1e12f
 # ╟─cc784f21-a230-4884-99a1-4afe41f95ceb
 # ╟─6813a207-414d-4cef-b0f5-bf676b34affa
@@ -3562,13 +3818,19 @@ version = "17.7.0+0"
 # ╠═23db3972-76b7-4369-866b-d1f187ba7670
 # ╠═c6b44ef8-d41d-49b1-ad8f-bd9f7cb5255a
 # ╠═5eb49614-6762-4544-9bf1-bcfa3af62646
+# ╟─ce5ed730-1f97-43f9-8b04-f1018b794166
+# ╟─762d2af0-c659-4af0-b567-677bbedcfad4
+# ╟─f705207b-16f2-453d-9d11-289776814b70
+# ╠═923384ff-d4a6-4a5d-839e-65b347aecdd6
+# ╠═aa2f0f49-f3a7-47c6-bf13-4dcda1a2405f
 # ╟─b6a0394e-57a5-400d-b83d-c7947f3e8a89
 # ╠═eb0232a0-3de9-43c8-87af-0c9eebb80a0c
 # ╟─549e81d0-9dbe-4f89-9849-333d7bdc4d4f
 # ╟─9b2872a0-2edc-479c-9ed0-61d4fd516f4c
 # ╟─450ba512-388a-49fe-ab16-554bbe9e2e21
 # ╟─1c631fdb-b640-4b93-a1fd-0b9543131277
-# ╟─fe3eca61-0f6b-480b-815b-6c3f17fb7d2c
+# ╟─a8629db6-b125-4d5c-b9ce-e6c3a6feed25
+# ╠═fe3eca61-0f6b-480b-815b-6c3f17fb7d2c
 # ╟─a5e84a20-26a6-4699-9de9-eb8b5d2306cf
 # ╠═7421e8f1-fa9b-4b36-9536-fba96567fd73
 # ╠═992f2ad9-8319-4a54-a915-9eee61adb8c1
@@ -3579,6 +3841,7 @@ version = "17.7.0+0"
 # ╠═136da9b2-a162-4bc7-8eb4-03d0451c84c5
 # ╠═0eee2f9e-0d86-45f4-aa68-1395a03450ac
 # ╠═80ea48b7-3ac8-45a7-87dc-e4229a5f26de
+# ╠═555773f3-6e40-492d-b4c9-0d5030ce1ad8
 # ╠═bb22acc8-f82f-42e5-ac75-c8dc607f92d9
 # ╠═829ddf60-23df-48d1-83ff-3e339d2bf152
 # ╟─3ab9580f-0b52-4b96-a386-91783e598798
@@ -3608,9 +3871,12 @@ version = "17.7.0+0"
 # ╟─65977e33-220d-42f2-bbe8-e76f9310f588
 # ╠═b5f69f19-dcf3-4293-9588-450dea5b74f0
 # ╠═0ec7e320-9c95-47b1-9493-8f8dbb15baa2
+# ╠═3b403324-afc2-4816-a8f1-f66c3e7a6cd2
 # ╟─05ebce43-73e1-4d20-8e1f-3211e6c4eb9c
 # ╟─79f12e83-e6f7-4eb4-9ea7-30aeb334b697
+# ╠═a8b79c95-261d-42a0-b619-26dc7f1aaa34
 # ╠═25a0e15d-5538-4ae4-b698-c6807edb18d4
+# ╠═b8f074b9-d88f-491a-adcc-46032e59ddd6
 # ╟─5da718f5-c940-49a3-9c38-7af26a930439
 # ╟─52a51c78-4438-44b2-8315-9cffd8ba2581
 # ╠═9a80e476-bad5-4a8f-a8e2-0008a1e5d698
@@ -3656,8 +3922,6 @@ version = "17.7.0+0"
 # ╠═20a8c921-816f-4c5c-9341-b7749644d249
 # ╠═c3e732e2-2a10-4de3-800f-0378e0acd0dc
 # ╠═00999193-757c-4bea-a24c-a5ed8633d826
-# ╠═e5a78e58-0208-4c6a-9f7f-4779e384855b
-# ╠═a929c6cc-733b-44a1-bdbd-40a525bb5ffd
 # ╠═db2d2393-e984-4828-9ec7-d9dfe076bc79
 # ╠═0de23d03-fc68-4b8b-9d0a-468e40ceee9a
 # ╟─00000000-0000-0000-0000-000000000001
