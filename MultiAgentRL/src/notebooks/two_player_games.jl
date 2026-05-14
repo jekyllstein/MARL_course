@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.21
+# v0.20.24
 
 using Markdown
 using InteractiveUtils
@@ -721,9 +721,6 @@ So out of the six branching cases, two of them require all four checks to determ
 		 </div>
 		 """)
 end |> confirm
-
-# ╔═╡ 59a47bf3-a80d-4936-b079-40ffed47c98c
-0.22222222*7 + 0.222222222*2 + 0.4444444444*6
 
 # ╔═╡ c932baa2-44e8-4109-97f9-c6a72b10a6e5
 nashes = check_nash(generalreward1)
@@ -1821,7 +1818,7 @@ StatsBase = "~0.34.7"
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.12.4"
+julia_version = "1.12.5"
 manifest_format = "2.0"
 project_hash = "7befd4f8b8cca10d64e4cd6c6f8fa457290abcb8"
 
@@ -2579,7 +2576,6 @@ version = "17.7.0+0"
 # ╟─b9699472-7f3d-4226-b60f-a3e1fb583ca8
 # ╟─97397f02-e87d-429a-a7b3-3ac961f22f54
 # ╠═5a62ad34-cb96-4dc4-a9ef-4841126aea57
-# ╠═59a47bf3-a80d-4936-b079-40ffed47c98c
 # ╠═c932baa2-44e8-4109-97f9-c6a72b10a6e5
 # ╠═71fe7db2-448a-4921-8272-f34d887c3668
 # ╠═e3c29301-44d2-4925-8ac8-8b2391106cdc

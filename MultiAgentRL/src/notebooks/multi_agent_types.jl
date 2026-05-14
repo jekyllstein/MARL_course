@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.21
+# v0.20.24
 
 using Markdown
 using InteractiveUtils
@@ -7,19 +7,14 @@ using InteractiveUtils
 # ╔═╡ 4e509812-7bdf-4928-bee6-55f2d142be67
 using PlutoDevMacros
 
-# ╔═╡ 9260398e-6842-4b11-9845-98900884b94a
-begin
-	PlutoDevMacros.@frompackage @raw_str(joinpath(@__DIR__, "..", "RL_Module")) begin 
-		using RL_Module
-		using >.Random, >.Statistics, >.LinearAlgebra, >.Transducers, >.StaticArrays, >.DataStructures, >.SparseArrays
-	end
-end
+# ╔═╡ b9ee4c0e-e556-4f67-9cce-533b1f35ed96
+using Dates, CSV
 
 # ╔═╡ 9f1aa27d-2214-4b7c-9110-1566603887d2
 # ╠═╡ skip_as_script = true
 #=╠═╡
 begin
-	using PlutoUI, PlutoPlotly, PlutoProfile, BenchmarkTools, LaTeXStrings, HypertextLiteral, DataFrames, Dates, CSV
+	using PlutoUI, PlutoPlotly, PlutoProfile, BenchmarkTools, LaTeXStrings, HypertextLiteral, DataFrames
 	
 	TableOfContents()
 end
@@ -35,6 +30,163 @@ md"""
 ## Tabular State Transition Functions
 For the multi-agent problem, transitions depend on the action selections of all agents involved.  In the general case, a reward value must also be assigned to each agent individually.  Since the number of agents is fundamental to the structure of the transition, it is helpful to include a type parameter `N` which specifies how many agents are included in the dynamics.  The dimensionality of the state transition map will have one additional dimension for the state space.  In a deterministic problem, only one transition state results for each state/join-action pair so the transition map can simply store each index.
 """
+
+# ╔═╡ b815429b-fbe3-443c-9a76-d4b194eca26d
+# ╠═╡ skip_as_script = true
+#=╠═╡
+#example transitions for two agents with 6 actions each
+ex_reward_transitions = rand(6, 6, 100)
+  ╠═╡ =#
+
+# ╔═╡ 23a5f4c3-5f6a-473a-9ee5-0c82cf8c7f8e
+#=╠═╡
+#joint action space for single agent RL is 36 representing all combinations of agent actions
+reshape(ex_reward_transitions, 36, 100)
+  ╠═╡ =#
+
+# ╔═╡ ed152a1a-0fc9-40f3-91b4-e40246725847
+md"""
+## Tabular Multi-Agent Stochastic Games
+
+To form a complete stochastic game, the transition function must be accompanied by the enumerated states, agent actions, state initialization function, and terminal states indicator.  For convenience, lookup tables are stored to easy find the index of any state and agent action.
+"""
+
+# ╔═╡ 04b35d98-e60f-4e3c-b89d-891f7139b5ec
+md"""
+## Non-tabular State Transition Functions
+
+The step function takes a state and joint action as input.  The joint action is represented by a tuple of integers of length equal to the number of agents.  Each index in the tuple refers to the index of the selected action for that agent from its list of available actions.
+"""
+
+# ╔═╡ ae213605-c98f-4939-8e29-48eea2ff5ed8
+md"""
+## Non-tabular Multi-Agent Stochastic Games
+
+For the non-tabular case, the list of states is omitted and now the initialization function returns a state rather than a state index.  Similarly, the list of terminal states is replaced by a function that can evaluate whether or not a state is terminal.
+"""
+
+# ╔═╡ ae85884a-a23a-48f3-947e-19fc4a21d39f
+md"""
+# Test Environments
+"""
+
+# ╔═╡ 660d62d3-b967-41ba-8dab-8d1003dcd1fc
+md"""
+## Level-Based Foraging
+
+Multiple agents move within a gridworld and have the option to collect items.  For randomly generated environments, items must be placed so none occupy the same grid point and an agent can never be adjacent to two items at once (otherwise the collect action is ambiguous).  Each item is associated with a set of 4 or fewer locations from which it is possible to collect (adjacent locations).  These collection locations can be saved in the state to speed up evaluation of the step function.
+"""
+
+# ╔═╡ c1cc33d2-ad34-4ad8-b47a-6be3aa44c8ed
+md"""
+### Tabular Environment
+"""
+
+# ╔═╡ 63062544-0375-4de4-86e3-385347033e5d
+md"""
+### Central Learning Reductions
+"""
+
+# ╔═╡ a91367b5-2bbf-4f17-9e04-5c939223c590
+md"""
+Using the sum of agent rewards as the scalar transformation, we can convert this multi-agent stochastic game into a Tabular MDP
+"""
+
+# ╔═╡ c46aa7de-2b71-4abe-b420-17802f027ab4
+md"""
+#### Value Iteration Solution
+
+With a tabular MDP, we can apply an exactly solution technique such as value iteration.
+"""
+
+# ╔═╡ aa1faa8e-1e85-4ce1-91c2-adacac30e80c
+md"""
+#### Ideal Episode Example 5.3 LBF
+"""
+
+# ╔═╡ 3f61b8ad-5f70-48f1-b967-33da2169e0fb
+md"""
+Sweep episode timesteps
+"""
+
+# ╔═╡ ac51b4e7-3097-420d-a2dc-0d939dea5456
+#=╠═╡
+md"""
+Play Movie: $(@bind timestep_select CheckBox())
+"""
+  ╠═╡ =#
+
+# ╔═╡ 1fac0df2-9ce4-40d1-9296-a067906c2b01
+md"""
+#### Sarsa Solution
+
+We can also apply estimation techniques from reinforcement learning that rely on environment sampling.  Below an example of using sarsa and its variations.
+"""
+
+# ╔═╡ 775fd220-532d-49ba-968f-20781c5d6708
+md"""
+## Two-Player Soccer
+
+Each episode starts with the ball randomly assigned to one agent and the two agents on their respective side of the "field" offset vertically by one square.  Each agent can move in the four cardinal grid directions or stand still.  If the agent with the ball ateempts to move into the location of the other agent, it loses the ball to the other agent.  An agent scores a reward of +1 if it moves the ball into the opponent goal (and the opponent gets a reward of -1), after which a new episode starts.  Selected actions are executed in a random order.
+"""
+
+# ╔═╡ 91c667a3-293d-44d7-9437-901274f27af9
+md"""
+## Non-Repeated Zero-Sum Games
+"""
+
+# ╔═╡ b53e1cfd-4f81-4e1e-bff0-3435d3fcd221
+md"""
+## Rock-Paper-Scissors
+"""
+
+# ╔═╡ c2bec8e1-9df1-4f5f-8e92-0f6f5f9955a4
+md"""
+## Non-Repeated General-Sum Games
+"""
+
+# ╔═╡ cc259b71-cbe0-4990-ba6f-b495f6b0a2b7
+md"""
+# Independing Learning Algorithms
+"""
+
+# ╔═╡ 50422bb8-ff98-4803-8a3b-9a42454d793d
+function get_max_q(q::Matrix{T}, i_s::Integer) where T<:Real
+	maxq = typemin(T)
+	@inbounds @simd for i_a in 1:size(q, 1)
+		maxq = max(maxq, q[i_a, i_s])
+	end
+	return maxq
+end
+
+# ╔═╡ eec99b81-8150-4a65-90a0-283cd5da877a
+md"""
+## Level-Based Foraging Test (General Sum Game)
+"""
+
+# ╔═╡ 8c6f4ab7-9172-4723-bc2b-e61fe0315e1c
+md"""
+## Soccer Game Test (Zero Sum Game)
+"""
+
+# ╔═╡ 75a6b525-a507-4cf0-9ba7-ec1e76e86465
+md"""
+# Visualization Tools
+
+"""
+
+# ╔═╡ 9a0a63a1-0292-4937-9d7f-8c18bc3eb28b
+md"""
+## Level-Based Foraging
+"""
+
+# ╔═╡ 1a488045-380d-4441-a6ec-186d3c53420d
+md"""
+# Dependencies
+"""
+
+# ╔═╡ 9260398e-6842-4b11-9845-98900884b94a
+@only_in_nb @frompackage "../RL_Module" import *
 
 # ╔═╡ f6de9a64-7dee-4291-815b-7a891c52a146
 begin
@@ -65,22 +217,6 @@ begin
 	end
 end
 
-# ╔═╡ fe796b4e-fb05-4071-ad4b-7e3ce58092c4
-#convert a multi-agent transition into an MDP transition with the action space being each joint action and the reward transformed into a single scalar value
-function TabularRL.TabularDeterministicTransition(ptf::TabularGameDeterministicTransition{T, N, Np1}, reward_function::Function) where {T<:Real, N, Np1}
-	dims = size(ptf.state_transition_map)
-	num_states = dims[Np1]
-	num_actions = dims[1:N]
-	total_actions = prod(num_actions)
-	state_transition_map = reshape(ptf.state_transition_map, total_actions, num_states)
-	reward_intermediate = reshape(ptf.reward_transition_map, total_actions, num_states)
-	reward_transition_map = Matrix{T}(undef, total_actions, num_states)
-	for i in eachindex(reward_transition_map)
-		reward_transition_map[i] = reward_function(reward_intermediate[i])
-	end
-	TabularDeterministicTransition(state_transition_map, reward_transition_map)
-end
-
 # ╔═╡ 28920a55-4e8c-4dfc-84a0-03eeb13b9975
 begin
 	struct TabularGameTransitionSampler{T<:Real, N, F<:Function} <: AbstractTabularGameTransition{T, N}
@@ -97,6 +233,98 @@ begin
 	(ptf::TabularGameTransitionSampler{T, N, F})(i_s::Integer, a::NTuple{N, I}) where {T<:Real, F<:Function, N, I<:Integer} = ptf.step(i_s, a)
 end
 
+# ╔═╡ 0b20d83b-eef0-4006-891e-9d15282ea57b
+begin
+	abstract type AbstractTabularCommonRewardGameTransition{T<:Real, N} <: AbstractTabularGameTransition{T, N} end 
+	abstract type AbstractTabularZeroSumGameTransition{T<:Real} <: AbstractTabularGameTransition{T, 2} end 
+end
+
+# ╔═╡ 71d96c8a-d036-45a9-95e4-bbf4ee079607
+begin
+	struct TabularZeroSumGameTransitionSampler{T<:Real, F<:Function} <: AbstractTabularZeroSumGameTransition{T}
+		step::F
+		function TabularZeroSumGameTransitionSampler(step::F) where {F<:Function}
+			(r, i_s′) = step(1, (1, 1))
+			@assert isa(i_s′, Integer)
+			new{typeof(r), F}(step)
+		end
+	end
+
+	#when used as a functor just apply the step function to the state action pair indices
+	(ptf::TabularZeroSumGameTransitionSampler{T, F})(i_s::Integer, a::NTuple{2, I}) where {T<:Real, F<:Function, I<:Integer} = ptf.step(i_s, a)
+end
+
+# ╔═╡ c9b36b87-4a88-4398-95ce-4feb4f9839f7
+begin
+	struct TabularCommonRewardGameTransitionSampler{T<:Real, N, F<:Function} <: AbstractTabularCommonRewardGameTransition{T, N}
+		step::F
+		function TabularCommonRewardGameTransitionSampler(step::F, a::NTuple{N, I}) where {F<:Function, I<:Integer, N}
+			(r, i_s′) = step(1, a)
+			@assert isa(i_s′, Integer)
+			new{typeof(r), N, F}(step)
+		end
+	end
+
+	#when used as a functor just apply the step function to the state action pair indices
+	(ptf::TabularCommonRewardGameTransitionSampler{T, N, F})(i_s::Integer, a::NTuple{N, I}) where {T<:Real, F<:Function, I<:Integer, N} = ptf.step(i_s, a)
+end
+
+# ╔═╡ 9b75d562-ac45-406a-867b-b6d2af5822ee
+#for a general sum game, the rewards are a tuple of values with one value per agent.  In a zero sum game and common reward game, there is only one reward value.  For a zero sum game that value is negative for agent 2 and positive for agent 1.  In a common reward game it is equal for all agents.
+begin
+	get_game_reward(ptf, rewards::NTuple{N, T}, n::Integer) where {N, T<:Real} = rewards[n]
+	get_game_reward(::AbstractTabularZeroSumGameTransition{T}, r::T, ::Val{1}) where T<:Real = r
+	get_game_reward(::AbstractTabularZeroSumGameTransition{T}, r::T, ::Val{2}) where T<:Real = -r
+	get_game_reward(ptf::AbstractTabularZeroSumGameTransition{T}, r::T, n::Integer) where T<:Real = get_game_reward(ptf, r, Val(n))
+	get_game_reward(::AbstractTabularCommonRewardGameTransition{T}, r::T, ::Integer) where T<:Real = r
+end
+
+# ╔═╡ 75726eb9-eb0e-42a3-a648-dbfce92cbd6e
+abstract type AbstractStochasticGame{T<:Real, S, A, N, P<:AbstractGameTransition{T, N}, F<:Function} end
+
+# ╔═╡ 9908b24b-77c4-4ece-99b5-337dc6725a13
+get_other_inds(ptf::AbstractTabularGameTransition{T, N}, agent_index::Integer) where {T<:Real, N} = (setdiff(1:N, agent_index), N+1)
+
+# ╔═╡ 738eadf8-7bbf-4942-a90d-e8accbb52bea
+begin
+	abstract type AbstractStateGameTransition{T<:Real, S, F<:Function, N} <: AbstractGameTransition{T, N} end
+
+	struct StateGameTransitionDeterministic{T<:Real, S, F<:Function, N} <: AbstractStateGameTransition{T, S, F, N}
+		step::F
+		function StateGameTransitionDeterministic(step::F, s::S, num_agents::Integer) where {F<:Function, S}
+			(r, s′) = step(s, ntuple(Returns(1), num_agents))
+			@assert promote_type(S, typeof(s′)) != Any "There is no common type between the provided state $s and the transition state $s′"
+			@assert length(r) == num_agents "The reward output length of $(length(r)) does not match the expected number of agents: $num_agents"
+			new{eltype(r), promote_type(S, typeof(s′)), F, num_agents}(step)
+		end
+	end
+
+	(ptf::StateGameTransitionDeterministic{T, S, F, N})(s::S, a::NTuple{N, I}) where {T<:Real, S, F<:Function, N, I<:Integer} = ptf.step(s, a)
+end
+
+# ╔═╡ c755f0b1-2299-42b4-a28d-d53980260e79
+begin
+	initialize_reward_history(::AbstractTabularGameTransition{T, N}) where {N, T<:Real} = Vector{NTuple{N, T}}()
+	initialize_reward_history(::AbstractTabularZeroSumGameTransition{T}) where T<:Real = Vector{T}()
+	initialize_reward_history(::AbstractTabularCommonRewardGameTransition{T}) where T<:Real = Vector{T}()
+end
+
+# ╔═╡ fe796b4e-fb05-4071-ad4b-7e3ce58092c4
+#convert a multi-agent transition into an MDP transition with the action space being each joint action and the reward transformed into a single scalar value
+function TabularRL.TabularDeterministicTransition(ptf::TabularGameDeterministicTransition{T, N, Np1}, reward_function::Function) where {T<:Real, N, Np1}
+	dims = size(ptf.state_transition_map)
+	num_states = dims[Np1]
+	num_actions = dims[1:N]
+	total_actions = prod(num_actions)
+	state_transition_map = reshape(ptf.state_transition_map, total_actions, num_states)
+	reward_intermediate = reshape(ptf.reward_transition_map, total_actions, num_states)
+	reward_transition_map = Matrix{T}(undef, total_actions, num_states)
+	for i in eachindex(reward_transition_map)
+		reward_transition_map[i] = reward_function(reward_intermediate[i])
+	end
+	TabularDeterministicTransition(state_transition_map, reward_transition_map)
+end
+
 # ╔═╡ 11b17cb5-30fa-4a66-bf71-52b4dc9f2f02
 sample_joint_action(πs::NTuple{N, M}, i_s::Integer) where {N, T<:Real, M <:AbstractMatrix{T}} = NTuple{N, Int64}(sample_action(πs[n], i_s) for n in 1:N)
 
@@ -105,12 +333,6 @@ function (ptf::AbstractGameTransition{T, N})(s, πs::NTuple{N, A}) where {T<:Rea
 	a = sample_joint_action(πs, s)
 	(r, s′) = ptf(s, a)
 	return (r, s′, a)
-end
-
-# ╔═╡ 0b20d83b-eef0-4006-891e-9d15282ea57b
-begin
-	abstract type AbstractTabularCommonRewardGameTransition{T<:Real, N} <: AbstractTabularGameTransition{T, N} end 
-	abstract type AbstractTabularZeroSumGameTransition{T<:Real} <: AbstractTabularGameTransition{T, 2} end 
 end
 
 # ╔═╡ c42b7d58-922d-4b17-a03c-62433c9adeb9
@@ -141,21 +363,6 @@ begin
 	end
 end
 
-# ╔═╡ 71d96c8a-d036-45a9-95e4-bbf4ee079607
-begin
-	struct TabularZeroSumGameTransitionSampler{T<:Real, F<:Function} <: AbstractTabularZeroSumGameTransition{T}
-		step::F
-		function TabularZeroSumGameTransitionSampler(step::F) where {F<:Function}
-			(r, i_s′) = step(1, (1, 1))
-			@assert isa(i_s′, Integer)
-			new{typeof(r), F}(step)
-		end
-	end
-
-	#when used as a functor just apply the step function to the state action pair indices
-	(ptf::TabularZeroSumGameTransitionSampler{T, F})(i_s::Integer, a::NTuple{2, I}) where {T<:Real, F<:Function, I<:Integer} = ptf.step(i_s, a)
-end
-
 # ╔═╡ 6f98c460-6d48-457d-a40c-6b8588fb01ef
 begin
 	struct TabularCommonRewardGameTransition{T<:Real, N, Np1, ST<:Union{Int64, SparseVector{T, Int64}}, RT<:Union{T, Vector{T}}} <: AbstractTabularCommonRewardGameTransition{T, N}
@@ -176,19 +383,22 @@ begin
 	end
 end
 
-# ╔═╡ c9b36b87-4a88-4398-95ce-4feb4f9839f7
+# ╔═╡ 727885f8-ad7a-44b4-845d-9a9d8aebdb87
 begin
-	struct TabularCommonRewardGameTransitionSampler{T<:Real, N, F<:Function} <: AbstractTabularCommonRewardGameTransition{T, N}
-		step::F
-		function TabularCommonRewardGameTransitionSampler(step::F, a::NTuple{N, I}) where {F<:Function, I<:Integer, N}
-			(r, i_s′) = step(1, a)
-			@assert isa(i_s′, Integer)
-			new{typeof(r), N, F}(step)
-		end
+	function check_policies(ptf::Union{TabularGameTransition{T, N, Np1, ST, RT}, TabularCommonRewardGameTransition{T, N, Np1, ST, RT}}, π_others::NTuple{Nm1, M}) where {T<:Real, N, Np1, ST, RT, Nm1, T2<:Real, M <:AbstractMatrix{T2}}
+		@assert Nm1 == (N-1) "There must be $(N-1) policies for the other agents"
 	end
 
-	#when used as a functor just apply the step function to the state action pair indices
-	(ptf::TabularCommonRewardGameTransitionSampler{T, N, F})(i_s::Integer, a::NTuple{N, I}) where {T<:Real, F<:Function, I<:Integer, N} = ptf.step(i_s, a)
+	check_policies(ptf::TabularZeroSumGameTransition{T, ST, RT}, π_others::NTuple{1, M}) where {T<:Real, ST, RT, T2<:Real, M <:AbstractMatrix{T2}} = nothing
+		
+	check_policies(ptf::TabularZeroSumGameTransition{T, ST, RT}, π_others::NTuple{Nm1, M}) where {T<:Real, ST, RT, T2<:Real, Nm1, M <:AbstractMatrix{T2}} =  error("There must be 1 policy for the other agent")
+end	
+
+# ╔═╡ b0b41d5e-4944-4fc8-b108-175c559e3d63
+begin
+	get_num_states(ptf::Union{TabularGameTransition{T, N, Np1, ST, RT}, TabularCommonRewardGameTransition{T, N, Np1, ST, RT}}) where {T<:Real, N, Np1, ST, RT} = size(ptf.state_transition_map, Np1)
+
+	get_num_states(ptf::TabularZeroSumGameTransition{T, ST, RT}) where {T<:Real, ST, RT} = size(ptf.state_transition_map, 3)
 end
 
 # ╔═╡ ed41ec94-38be-40de-bf61-c927c242cef7
@@ -202,24 +412,6 @@ function TabularRL.TabularDeterministicTransition(ptf::TabularCommonRewardGameDe
 	reward_transition_map = reshape(ptf.reward_transition_map, total_actions, num_states)
 	TabularDeterministicTransition(state_transition_map, reward_transition_map)
 end
-
-# ╔═╡ b815429b-fbe3-443c-9a76-d4b194eca26d
-#example transitions for two agents with 6 actions each
-ex_reward_transitions = rand(6, 6, 100)
-
-# ╔═╡ 23a5f4c3-5f6a-473a-9ee5-0c82cf8c7f8e
-#joint action space for single agent RL is 36 representing all combinations of agent actions
-reshape(ex_reward_transitions, 36, 100)
-
-# ╔═╡ 75726eb9-eb0e-42a3-a648-dbfce92cbd6e
-abstract type AbstractStochasticGame{T<:Real, S, A, N, P<:AbstractGameTransition{T, N}, F<:Function} end
-
-# ╔═╡ ed152a1a-0fc9-40f3-91b4-e40246725847
-md"""
-## Tabular Multi-Agent Stochastic Games
-
-To form a complete stochastic game, the transition function must be accompanied by the enumerated states, agent actions, state initialization function, and terminal states indicator.  For convenience, lookup tables are stored to easy find the index of any state and agent action.
-"""
 
 # ╔═╡ 79888a7b-c604-4db2-932a-ee9bfd378d9e
 begin
@@ -240,6 +432,80 @@ begin
 	TabularStochasticGame(states::Vector{S}, agent_actions::NTuple{N, Vector{A}}, ptf::P, initialize_state_index::F; state_index::Dict{S, Int64} = makelookup(states), action_index::NTuple{N, Dict{A, Int64}} = Tuple(makelookup(a) for a in agent_actions)) where {S, A, N, P<:AbstractTabularGameTransition, F<:Function} = TabularStochasticGame(states, agent_aactions, ptf, initialize_state_index, BitMatrix(undef, length(states)), state_index, action_index)
 
 	TabularStochasticGame(states::Vector{S}, agent_actions::NTuple{N, Vector{A}}, ptf::P; state_index::Dict{S, Int64} = makelookup(states), action_index::NTuple{N, Dict{A, Int64}} = Tuple(makelookup(a) for a in agent_actions)) where {S, A, N, P<:AbstractTabularGameTransition} = TabularStochasticGame(states, agent_actions, ptf, Returns(1:length(states)), BitMatrix(undef, length(states)), state_index, action_index)
+end
+
+# ╔═╡ 2bfa6ee7-d580-4ea0-9551-28c34570dc1e
+function create_non_repeated_zero_sum_game(reward_matrix::Matrix{T}, agent_actions::NTuple{2, Vector{A}}) where {A, T<:Real}
+	(na1, na2) = size(reward_matrix)
+
+	state_transition_map = ones(Int64, na1, na2, 2) .* 2
+	reward_transition_map = zeros(Float32, na1, na2, 2)
+	for i_a1 in 1:na1
+		for i_a2 in 1:na2
+			reward_transition_map[i_a1, i_a2, 1] = reward_matrix[i_a1, i_a2]
+		end
+	end
+
+	ptf = TabularZeroSumGameTransition(state_transition_map, reward_transition_map)
+
+	initialize_state_index() = 1
+
+	TabularStochasticGame([:play, :term], agent_actions, ptf, initialize_state_index, BitVector([false, true]))
+end
+
+# ╔═╡ 769e5dc3-684e-4d36-a63f-0edb90331c59
+module RockPaperScissors
+	const actions = [:rock, :paper, :scissors]
+	const payout_matrix = [0f0 -1f0 1f0; 1f0 0f0 -1f0; -1f0 1f0 0f0]
+
+	import ..create_non_repeated_zero_sum_game
+	non_repeated_game = create_non_repeated_zero_sum_game(payout_matrix, ntuple(i -> actions, 2))
+end
+
+# ╔═╡ 5629f70c-b2cc-4a68-b5f0-9a11aef6dcbc
+# ╠═╡ skip_as_script = true
+#=╠═╡
+RockPaperScissors.non_repeated_game.ptf(1, (3, 2))
+  ╠═╡ =#
+
+# ╔═╡ 9f05e777-fb94-42f9-9cd7-b461f10f199d
+function create_non_repeated_game(reward_matrices::NTuple{N, Matrix{T}}, agent_actions::NTuple{N, Vector{A}}) where {A, T<:Real, N}
+	ns = size(first(reward_matrices))
+
+	test_mat = ones(Int64, ns...)
+	state_transition_map = ones(Int64, ns..., 2) .* 2
+	reward_transition_map = Array{NTuple{N, T}, N+1}(undef, ns..., 2)
+	
+	for i in CartesianIndices(test_mat)
+		reward_transition_map[i, 1] = NTuple{N, T}(reward_matrices[n][i] for n in 1:N)
+		reward_transition_map[i, 2] = NTuple{N, T}(zero(T) for n in 1:N)
+	end
+
+	ptf = TabularGameTransition(state_transition_map, reward_transition_map)
+
+	initialize_state_index() = 1
+
+	TabularStochasticGame([:play, :term], agent_actions, ptf, initialize_state_index, BitVector([false, true]))
+end
+
+# ╔═╡ a2284047-0aaf-41b2-a6a0-de082cdeb5a2
+# ╠═╡ skip_as_script = true
+#=╠═╡
+create_non_repeated_game(([1. -1.; -1. 1.], [-1. 1.; 1. -1.]), ([1, 2], [1, 2]))
+  ╠═╡ =#
+
+# ╔═╡ 3f44f098-5aef-4287-901e-67a6062f0f02
+function make_random_policies(game::TabularStochasticGame{T, S, A, N, P, F}) where {T<:Real, S, A, P, F, N}
+	n_actions = Tuple(length(a) for a in game.agent_actions)
+	n_states = length(game.states)
+	NTuple{N, Matrix{T}}(ones(T, n_actions[n], n_states) ./ n_actions[n] for n in 1:N)
+end
+
+# ╔═╡ d95d9945-944a-497b-b07b-7b4d4eb1f01d
+function initialize_agent_action_values(game::TabularStochasticGame{T, S, A, N, P, F}, init_value::T) where {T<:Real, S, A, P, F<:Function, N}
+	n_actions = NTuple{N, Int64}(length(a) for a in game.agent_actions)
+	n_states = length(game.states)
+	NTuple{N, Matrix{T}}(ones(T, n_actions[n], n_states) .* init_value for n in 1:N)
 end
 
 # ╔═╡ faac6925-b526-4ee0-a84c-b660e6819313
@@ -316,26 +582,93 @@ end
 # ╔═╡ 77719b6d-893e-4011-b676-cbd322d3a835
 TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, 2, P, F}, player1::Bool, π_other::M) where {T<:Real, S, A, P<:TabularGameTransitionSampler{T, 2}, F<:Function, T2<:Real, M <: AbstractMatrix{T2}} = TabularMDP(stochastic_game, player1*1 + !player1*2, (π_other,))
 
-# ╔═╡ 727885f8-ad7a-44b4-845d-9a9d8aebdb87
+# ╔═╡ eb6189fd-68e0-435f-b736-dab754522ea9
 begin
-	function check_policies(ptf::Union{TabularGameTransition{T, N, Np1, ST, RT}, TabularCommonRewardGameTransition{T, N, Np1, ST, RT}}, π_others::NTuple{Nm1, M}) where {T<:Real, N, Np1, ST, RT, Nm1, T2<:Real, M <:AbstractMatrix{T2}}
-		@assert Nm1 == (N-1) "There must be $(N-1) policies for the other agents"
+	function update_transitions!(state_transition_map::Matrix{SparseVector{T, Int64}}, reward_transitions::Matrix{Dict{Int64, T}}, ptf::Union{TabularGameStochasticTransition{T, N, Np1}, TabularZeroSumGameStochasticTransition{T}, TabularCommonRewardGameStochasticTransition{T, N}}, cart_ind::CartesianIndex, i_a::Integer, i_s::Integer, p::T, agent_index::Integer) where {T<:Real, N, Np1}
+		probs = ptf.state_transition_map[cart_ind]
+		agent_rewards = ptf.reward_transition_map[cart_ind]
+
+		for i in eachindex(probs.nzind)
+			i_s′ = probs.nzind[i]
+			r = get_game_reward(ptf, agent_rewards[i], agent_index)
+			p2 = probs.nzval[i]
+			state_transition_map[i_a, i_s][i_s′] += p*p2
+			
+			if !haskey(reward_transitions[i_a, i_s], i_s′)
+				reward_transitions[i_a, i_s][i_s′] = p*p2*r
+			else
+				reward_transitions[i_a, i_s][i_s′] += p*p2*r
+			end
+		end
 	end
 
-	check_policies(ptf::TabularZeroSumGameTransition{T, ST, RT}, π_others::NTuple{1, M}) where {T<:Real, ST, RT, T2<:Real, M <:AbstractMatrix{T2}} = nothing
-		
-	check_policies(ptf::TabularZeroSumGameTransition{T, ST, RT}, π_others::NTuple{Nm1, M}) where {T<:Real, ST, RT, T2<:Real, Nm1, M <:AbstractMatrix{T2}} =  error("There must be 1 policy for the other agent")
-end	
-
-# ╔═╡ b0b41d5e-4944-4fc8-b108-175c559e3d63
-begin
-	get_num_states(ptf::Union{TabularGameTransition{T, N, Np1, ST, RT}, TabularCommonRewardGameTransition{T, N, Np1, ST, RT}}) where {T<:Real, N, Np1, ST, RT} = size(ptf.state_transition_map, Np1)
-
-	get_num_states(ptf::TabularZeroSumGameTransition{T, ST, RT}) where {T<:Real, ST, RT} = size(ptf.state_transition_map, 3)
+	function update_transitions!(state_transition_map::Matrix{SparseVector{T, Int64}}, reward_transitions::Matrix{Dict{Int64, T}}, ptf::Union{TabularGameDeterministicTransition{T, N, Np1}, TabularZeroSumGameDeterministicTransition{T}, TabularCommonRewardGameDeterministicTransition{T, N}}, cart_ind::CartesianIndex, i_a::Integer, i_s::Integer, p::T, agent_index::Integer) where {T<:Real, N, Np1}
+		i_s′ = ptf.state_transition_map[cart_ind]
+		r = get_game_reward(ptf, ptf.reward_transition_map[cart_ind], agent_index)
+		state_transition_map[i_a, i_s][i_s′] += p
+		if !haskey(reward_transitions[i_a, i_s], i_s′)
+			reward_transitions[i_a, i_s][i_s′] = p*r
+		else
+			reward_transitions[i_a, i_s][i_s′] += p*r
+		end
+	end
 end
 
-# ╔═╡ 9908b24b-77c4-4ece-99b5-337dc6725a13
-get_other_inds(ptf::AbstractTabularGameTransition{T, N}, agent_index::Integer) where {T<:Real, N} = (setdiff(1:N, agent_index), N+1)
+# ╔═╡ 475e855e-ca4b-4466-ba8b-ca0edefb4f82
+#convert a tabular stochastic game into a tabular mdp for agent i using fixed policies for the other agents
+function TabularRL.TabularStochasticTransition(ptf::Union{TabularGameTransition{T, N, Np1, ST, RT}, TabularZeroSumGameTransition{T, ST, RT}, TabularCommonRewardGameTransition{T, N, Np1, ST, RT}}, agent_index::Integer, π_others::NTuple{Nm1, M}) where {T<:Real, N, Np1, Nm1, T2<:Real, M <: AbstractMatrix{T2}, ST <: Union{Int64, SparseVector{T, Int64}}, RT <: Union{T, Vector{T}}}
+	check_policies(ptf, π_others)
+	
+	num_actions = size(ptf.state_transition_map, agent_index)
+	num_states = get_num_states(ptf)
+
+	(other_inds, state_index) = get_other_inds(ptf, agent_index)
+	
+	state_transition_map = Matrix{SparseVector{T, Int64}}(undef, num_actions, num_states)
+	reward_transitions = Matrix{Dict{Int64, T}}(undef, num_actions, num_states)
+	reward_transition_map = Matrix{Vector{T}}(undef, num_actions, num_states)
+	for i in eachindex(state_transition_map)
+		state_transition_map[i] = SparseVector{T, Int64}(zeros(T, num_states))
+		reward_transitions[i] = Dict{Int64, T}()
+		reward_transition_map[i] = Vector{T}()
+	end
+
+	cart_inds = CartesianIndices(ptf.state_transition_map)
+	
+	for cart_ind in cart_inds
+		i_s = cart_ind[state_index]
+		i_a = cart_ind[agent_index]
+
+		p = one(T)
+		for (i, n) in enumerate(other_inds)
+			i_a_other = cart_ind[n]
+			p *= π_others[i][i_a_other, i_s]
+		end
+
+		update_transitions!(state_transition_map, reward_transitions, ptf, cart_ind, i_a, i_s, p, agent_index)
+	end
+
+	for i_s in 1:num_states
+		for i_a in 1:num_actions
+			for i_s′ in state_transition_map[i_a, i_s].nzind
+				ptot = state_transition_map[i_a, i_s][i_s′]
+				r_avg = reward_transitions[i_a, i_s][i_s′] / ptot
+				push!(reward_transition_map[i_a, i_s], r_avg)
+			end
+		end
+	end
+
+	TabularTransitionDistribution(state_transition_map, reward_transition_map)
+end
+
+# ╔═╡ 89b1cb3b-bf58-4ca3-a08d-736ee2af2b0f
+function TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, N, P, F}, agent_index::Integer, π_others::NTuple{Nm1, M}) where {T<:Real, S, A, N, P<:Union{TabularGameTransition, TabularZeroSumGameTransition, TabularCommonRewardGameTransition}, F<:Function, Nm1, T2<:Real, M <: AbstractMatrix{T2}}
+	@assert Nm1 == (N - 1) "There must be $(N-1) policies for the other agents"
+	agent_actions = stochastic_game.agent_actions
+
+	ptf = TabularStochasticTransition(stochastic_game.ptf, agent_index, π_others)
+	TabularMDP(stochastic_game.states, agent_actions[agent_index], ptf, stochastic_game.initialize_state_index, stochastic_game.terminal_states; state_index = stochastic_game.state_index)
+end
 
 # ╔═╡ fab57783-bcf7-4fd8-a5d1-5824db9226e4
 TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, 2, P, F}, player1::Bool, π_other::M) where {T<:Real, S, A, P<:Union{TabularGameTransition, TabularZeroSumGameTransition, TabularCommonRewardGameTransition}, F<:Function, T2<:Real, M <: AbstractMatrix{T2}} = TabularMDP(stochastic_game, player1*1 + !player1*2, (π_other,))
@@ -360,37 +693,6 @@ function TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, 2,
 	TabularMDP(stochastic_game.states, agent_actions[agent_index], ptf, stochastic_game.initialize_state_index, stochastic_game.terminal_states; state_index = stochastic_game.state_index)
 end
 
-# ╔═╡ 04b35d98-e60f-4e3c-b89d-891f7139b5ec
-md"""
-## Non-tabular State Transition Functions
-
-The step function takes a state and joint action as input.  The joint action is represented by a tuple of integers of length equal to the number of agents.  Each index in the tuple refers to the index of the selected action for that agent from its list of available actions.
-"""
-
-# ╔═╡ 738eadf8-7bbf-4942-a90d-e8accbb52bea
-begin
-	abstract type AbstractStateGameTransition{T<:Real, S, F<:Function, N} <: AbstractGameTransition{T, N} end
-
-	struct StateGameTransitionDeterministic{T<:Real, S, F<:Function, N} <: AbstractStateGameTransition{T, S, F, N}
-		step::F
-		function StateGameTransitionDeterministic(step::F, s::S, num_agents::Integer) where {F<:Function, S}
-			(r, s′) = step(s, ntuple(Returns(1), num_agents))
-			@assert promote_type(S, typeof(s′)) != Any "There is no common type between the provided state $s and the transition state $s′"
-			@assert length(r) == num_agents "The reward output length of $(length(r)) does not match the expected number of agents: $num_agents"
-			new{eltype(r), promote_type(S, typeof(s′)), F, num_agents}(step)
-		end
-	end
-
-	(ptf::StateGameTransitionDeterministic{T, S, F, N})(s::S, a::NTuple{N, I}) where {T<:Real, S, F<:Function, N, I<:Integer} = ptf.step(s, a)
-end
-
-# ╔═╡ ae213605-c98f-4939-8e29-48eea2ff5ed8
-md"""
-## Non-tabular Multi-Agent Stochastic Games
-
-For the non-tabular case, the list of states is omitted and now the initialization function returns a state rather than a state index.  Similarly, the list of terminal states is replaced by a function that can evaluate whether or not a state is terminal.
-"""
-
 # ╔═╡ 736aacc0-5592-4439-b8c3-cf76525983a5
 begin
 	struct StateStochasticGame{T<:Real, S, A, N, P<:AbstractStateGameTransition{T, S, F, N} where F<:Function, StateInit<:Function, IsTerm<:Function} <: AbstractStochasticGame{T, S, A, N, P, StateInit}
@@ -411,7 +713,26 @@ begin
 
 	#if terminal check is not provided assume there are no terminal states
 	StateStochasticGame(agent_actions::NTuple{N, A}, ptf::AbstractStateGameTransition{T, S, F, N}, initialize_state::StateInit; kwargs...) where {T<:Real, S, F<:Function, N, A<:AbstractVector, StateInit<:Function} = StateStochasticGame(agent_actions, ptf, initialize_state, Returns(false); kwargs...)
+
+	function StateStochasticGame(game::TabularStochasticGame{T, S, A, N, P, F}) where {T<:Real, S, A, N, P<:TabularGameDeterministicTransition, F<:Function}
+		agent_actions = game.agent_actions
+		initialize_state() = game.states[game.initialize_state_index()]
+		isterm(s::S) = game.terminal_states[game.state_index[s]]
+	
+		function step(s::S, a::NTuple{N, Int64})
+			i_s = game.state_index[s]
+			i_s′ = game.ptf.state_transition_map[a..., i_s]
+			rewards = game.ptf.reward_transition_map[a..., i_s]
+			return rewards, game.states[i_s′]
+		end
+		
+		ptf = StateGameTransitionDeterministic(step, initialize_state(), N)
+		StateStochasticGame(agent_actions, ptf, initialize_state, isterm, game.action_index)
+	end
 end
+
+# ╔═╡ acdb7ffb-df0a-4609-8b07-87b4f3f9a145
+StateStochasticGame(create_non_repeated_game(([1. -1.; -1. 1.], [-1. 1.; 1. -1.]), ([1, 2], [1, 2])))
 
 # ╔═╡ 39182e4e-6ee9-4c14-8b5f-3164e38d5b5a
 begin
@@ -441,23 +762,12 @@ function TabularRL.StateMDP(mdp::StateStochasticGame{T, S, A, N, P, F1, F2}, rew
 	StateMDP(joint_action_list, ptf, mdp.initialize_state, mdp.isterm)
 end
 
-# ╔═╡ ae85884a-a23a-48f3-947e-19fc4a21d39f
-md"""
-# Test Environments
-"""
-
-# ╔═╡ 660d62d3-b967-41ba-8dab-8d1003dcd1fc
-md"""
-## Level-Based Foraging
-
-Multiple agents move within a gridworld and have the option to collect items.  For randomly generated environments, items must be placed so none occupy the same grid point and an agent can never be adjacent to two items at once (otherwise the collect action is ambiguous).  Each item is associated with a set of 4 or fewer locations from which it is possible to collect (adjacent locations).  These collection locations can be saved in the state to speed up evaluation of the step function.
-"""
-
 # ╔═╡ 79b114c9-8999-4e78-86b7-8bc0bd81dcad
 module LevelBasedForaging
 	#import general RL and MARL types and functions
-	import RL_Module
-	import TabularRL.makelookup
+	import ..RL_Module
+
+	import ..makelookup
 
 	import ..StateGameTransitionDeterministic
 	import ..StateStochasticGame
@@ -478,35 +788,48 @@ module LevelBasedForaging
 
 	#six actions available to each agent
 	const action_list = [Up(), Down(), Left(), Right(), Collect(), Noop()]
+	const action_tuple = (Up(), Down(), Left(), Right(), Collect(), Noop())
 	const action_index = makelookup(action_list)
 
-	#a state in the LBF environment must track the location of each agent and item.  Associated with every entity is also a level.  To aid the environment step function, the state also stores a Set of available positions to agents and the valid positions to collect each item.
-	struct ForagingState{N, M}
-		agent_positions::Vector{Position}
-		item_positions::Vector{Position}
-		agent_levels::Vector{Int64}
-		item_levels::Vector{Int64}
-		available_positions::Set{Position} #keeps track of which positions an agent could move into by excluding squares occupied by items
-		item_collection_positions::Vector{Set{Position}} #keeps a list of the positions that are allowed for collecting each item.  These are just the square adjacent to it
-		item_level_sum::Integer
+	#a state in the LBF environment must track the location of each agent and item.  Associated with every entity is also a level.  To aid the environment step function, the state also stores a Set of available positions to agents and the valid positions to collect each item.  During state transitions, all of these will remain fixed in the new state except `item_collect` and `available_positions`
+	struct ForagingState{N, M, X, Y}
+		agent_positions::NTuple{N, Position}
+		item_positions::NTuple{M, Position}
+		item_collect::NTuple{M, Bool} #keeps track of whether or not an item has been collected, initial values will be all false
+		agent_levels::NTuple{N, Int64}
+		item_levels::NTuple{M, Int64}
 
-		ForagingState(agent_positions, item_positions, agent_levels, item_levels, available_positions, item_collection_positions, item_level_sum) = new{length(agent_positions), length(item_positions)}(agent_positions, item_positions, agent_levels, item_levels, available_positions, item_collection_positions, item_level_sum)
+		# ForagingState(agent_positions, item_positions, item_collect, agent_levels, item_levels, available_positions, item_collection_positions, item_level_sum) = new{length(agent_positions), length(item_positions)}(agent_positions, item_positions, agent_levels, item_levels, available_positions, item_collection_positions, item_level_sum)
 	end
 
 	#hash and isequal definition for ForagingState so that dictionary lookup is not affected by the non-essential state information
-	Base.hash(s::ForagingState) = hash((s.agent_positions, s.item_positions, s.agent_levels, s.item_levels, s.item_level_sum))
-	Base.isequal(s1::ForagingState, s2::ForagingState) = isequal(s1.agent_positions, s2.agent_positions) && isequal(s1.item_positions, s2.item_positions) && isequal(s1.agent_levels, s2.agent_levels) && isequal(s1.item_levels, s2.item_levels) && isequal(s1.item_level_sum, s2.item_level_sum)
+	Base.hash(s::ForagingState) = hash((s.agent_positions, s.item_positions, s.item_collect, s.agent_levels, s.item_levels))
+	Base.isequal(s1::ForagingState{N1, M1, X1, Y1}, s2::ForagingState{N2, M2, X2, Y2}) where {N1, M1, X1, Y1, N2, M2, X2, Y2} = false
+	Base.isequal(s1::ForagingState{N, M, X, Y}, s2::ForagingState{N, M, X, Y}) where {N, M, X, Y} = isequal(s1.agent_positions, s2.agent_positions) && isequal(s1.item_positions, s2.item_positions) && isequal(s1.agent_levels, s2.agent_levels) && isequal(s1.item_levels, s2.item_levels) && isequal(s1.item_collect, s2.item_collect)
 
 	#generate a ForagingState with only the essential information
-	function ForagingState(agent_positions::Vector{Position}, item_positions::Vector{Position}, agent_levels::Vector{Int64}, item_levels::Vector{Int64}, item_level_sum::Integer, x_max::Integer, y_max::Integer)
-		position_set = Set((x, y) for x in 1:x_max for y in 1:y_max)
-		available_positions = setdiff(position_set, item_positions)
-		item_collection_positions = [get_adjacent(p) for p in item_positions]
-		ForagingState(agent_positions, item_positions, agent_levels, item_levels, available_positions, item_collection_positions, item_level_sum)
+	function ForagingState(agent_positions::NTuple{N, Position}, item_positions::NTuple{M, Position}, agent_levels::NTuple{N, Int64}, item_levels::NTuple{M, Int64}, x_max::Integer, y_max::Integer) where {N, M}
+		ForagingState{N, M, x_max, y_max}(agent_positions, item_positions, ntuple(i -> false, M), agent_levels, item_levels)
+	end
+
+	function ForagingState(agent_positions, item_positions, agent_levels, item_levels, x_max::Integer, y_max::Integer)
+		N = length(agent_positions)
+		M = length(item_positions)
+		ForagingState(NTuple{N, Position}(agent_positions), NTuple{M, Position}(item_positions), NTuple{N, Int64}(agent_levels), NTuple{M, Int64}(item_levels), x_max, y_max)
+	end
+
+	function ForagingState(agent_positions::NTuple{N, Position}, item_positions::NTuple{M, Position}, item_collect::NTuple{M, Bool}, agent_levels::NTuple{N, Int64}, item_levels::NTuple{M, Int64}, x_max::Integer, y_max::Integer) where {N, M}
+		ForagingState{N, M, x_max, y_max}(agent_positions, item_positions, item_collect, agent_levels, item_levels)
+	end
+
+	function ForagingState(agent_positions, item_positions, item_collect, agent_levels, item_levels, x_max::Integer, y_max::Integer)
+		N = length(agent_positions)
+		M = length(item_positions)
+		ForagingState(NTuple{N, Position}(agent_positions), NTuple{M, Position}(item_positions), NTuple{M, Bool}(item_collect), NTuple{N, Int64}(agent_levels), NTuple{M, Int64}(item_levels), x_max, y_max)
 	end
 
 	#LBF episodes end after all items have been collected
-	isterm(s::ForagingState) = isempty(s.item_positions)
+	isterm(s::ForagingState) = all(s.item_collect)
 
 	function check_adjacent(p1::Position, p2::Position) 
 		((p1[1] == p2[1]) && (abs(p1[2] - p2[2]) == 1)) ||
@@ -519,24 +842,26 @@ module LevelBasedForaging
 	attempt_collect(s::ForagingState, a::ForagingMove, agent_index::Integer) = (0, 0)
 
 	#For the `collect` action, adds the desired item and agent level to the tally for that item
-	function attempt_collect(s::ForagingState{N, M}, a::Collect, agent_index::Integer) where {N, M}
+	function attempt_collect(s::ForagingState{N, M, X, Y}, a::Collect, agent_index::Integer) where {N, M, X, Y}
 		agent_position = s.agent_positions[agent_index]
 		agent_level = s.agent_levels[agent_index]
 		i = 1
 		item_number = 0
 		level = 0
 		for i in 1:M
-			flag = in(agent_position, s.item_collection_positions[i])
-			item_number += flag*i
-			level += flag*agent_level
+			if !s.item_collect[i] #can only collect an item that hasn't yet been collected
+				flag = check_adjacent(agent_position, s.item_positions[i])
+				item_number += flag*i
+				level += flag*agent_level
+			end
 		end
 		return (item_number, level)
 	end
 
-	attempt_collect(s::ForagingState, i_a::Integer, agent_index::Integer) = attempt_collect(s, action_list[i_a], agent_index)
+	attempt_collect(s::ForagingState, i_a::Integer, agent_index::Integer) = attempt_collect(s, action_tuple[i_a], agent_index)
 
 	#for a joint action, checks to see which items if any are collected based on if the level checks pass for a particular item.  Then rewards are allotted to the agents involved in collection
-	function attempt_collect(s::ForagingState{N, M}, a::NTuple{N, I}) where {N, M, I<:Integer}
+	function attempt_collect(s::ForagingState{N, M, X, Y}, a::NTuple{N, I}) where {N, M, X, Y, I<:Integer}
 		item_checks = zeros(Int64, M)
 		agent_checks = [Set{Int64}() for _ in 1:M]
 		rewards = zeros(Float32, N)
@@ -549,16 +874,22 @@ module LevelBasedForaging
 			end
 		end
 
+		item_level_sum = sum(s.item_levels)
+
 		for i in 1:M
-			item_level = s.item_levels[i]
-			success = (item_checks[i] >= item_level)
-			if success
-				denom = s.item_level_sum * sum(s.agent_levels[j] for j in agent_checks[i])
-				for j in agent_checks[i]
-					rewards[j] = s.agent_levels[j]*item_level / denom
+			if !s.item_collect[i] #can only collect an item that hasn't already been collected
+				item_level = s.item_levels[i]
+				success = (item_checks[i] >= item_level)
+				if success
+					denom = item_level_sum * sum(s.agent_levels[j] for j in agent_checks[i])
+					for j in agent_checks[i]
+						rewards[j] = s.agent_levels[j]*item_level / denom
+					end
 				end
+				item_checks[i] = success
+			else #in this case the item has already been collected so just reflect that in the check without assigning any reward
+				item_checks[i] = 1
 			end
-			item_checks[i] = success
 		end
 
 		return rewards, item_checks
@@ -572,88 +903,127 @@ module LevelBasedForaging
 	move(p::Position, ::Left) = (p[1]-1, p[2])
 	move(p::Position, ::Collect) = p
 
-	move(p::Position, i_a::Integer) = move(p, action_list[i_a])
+	#ensures that no item is in a collectable position with another item on the grid which creates ambiguity about the `collect` action
+	function make_item_bubble(p::Position)
+		excluded_positions = Set{Position}()
+		push!(excluded_positions, p)
+		moves = ((Up(), Down(), Left(), Right()))
+		for m in moves
+			push!(excluded_positions, move(p, m))
+		end
+		
+		for m1 in moves
+			for m2 in moves
+				push!(excluded_positions, move(move(p, m1), m2))
+			end
+		end
+		return excluded_positions
+	end
 
 	#initialize a state given the grid size, number of agents, number of items and the level distribution for both.  Randomly assigns levels using a uniform distribution from 1 to maxlevel
-	function initialize_state(grid_positions, position_set, num_agents, num_items, max_agent_level, max_item_level)
+	function initialize_state(width::Integer, height::Integer, num_agents, num_items, min_agent_level, max_agent_level, min_item_level, max_item_level; force_cooperation::Bool = false)
+		grid_positions = Set((x, y) for x in 1:width for y in 1:height)
 		p1 = rand(grid_positions)
 
-		excluded_positions = Set((p1, move(p1, Up()), move(p1, Down()), move(p1, Right()), move(p1, Left())))
+		excluded_positions = make_item_bubble(p1)
 		item_positions = [p1]
 		allowed_positions = setdiff(grid_positions, excluded_positions)
 		
 		for i in 2:num_items
+			isempty(allowed_positions) && break
 			p = rand(allowed_positions)
 			push!(item_positions, p)
-			setdiff!(allowed_positions, (p,))
-			for m in (Up(), Down(), Right(), Left())
-				setdiff!(allowed_positions, move(p, m))
-			end
+			setdiff!(allowed_positions, make_item_bubble(p))
 		end
+
+		#allowed positions for agents
+		allowed_positions = setdiff(grid_positions, item_positions)
+
+		isempty(allowed_positions) && error("Cannot form state with no available positions for agents")
 
 		agent_positions = [rand(allowed_positions)]
 		for i in 2:num_agents
 			setdiff!(allowed_positions, agent_positions[[i-1]])
 			push!(agent_positions, rand(allowed_positions))
+			isempty(allowed_positions) && error("Cannot form state with no available positions for agents")
 		end
 
-		item_levels = [rand(1:max_item_level) for _ in 1:num_items]
-		agent_levels = [rand(1:max_agent_level) for _ in 1:num_agents]
+		agent_levels = [rand(min_agent_level:max_agent_level) for _ in 1:num_agents]
+		agent_level_sum = sum(agent_levels)
+
+		num_items = length(item_positions)
+
+		min_item_level > agent_level_sum && error("The minimum item level of $min_item_level is higher than the agents can collect of $agent_level_sum")
+
+		min_item_level = force_cooperation ? maximum(agent_levels) + 1 : min_item_level
+
+		max_item_level = min(agent_level_sum, max_item_level)
+		min_item_level > max_item_level && error("No valid item levels between $min_item_level and $max_item_level")
 		
-		ForagingState(agent_positions, item_positions, agent_levels, item_levels, setdiff(position_set, item_positions), [get_adjacent(p) for p in item_positions], sum(item_levels))
+		#restrict item levels to only be as high as the sum of all the agent levels.  this ensures that every item is probably collectable
+		item_levels = [rand(min_item_level:max_item_level) for _ in 1:num_items]
+		
+		ForagingState(agent_positions, item_positions, agent_levels, item_levels, width, height)
+	end
+
+	function step(s::ForagingState{N, M, X, Y}, a::NTuple{N, I}, reset_chance::T) where {N, M, X, Y, I<:Integer, T<:Real}
+		isterm(s) && return (ntuple(i -> 0f0, N), s)
+		#check to see if any items have been collected and calculate the rewards
+		(rewards, item_checks) = attempt_collect(s, a)
+
+		item_collect′ = ntuple(M) do i
+			isone(item_checks[i])
+		end
+
+		!all(item_collect′) && (rand() < reset_chance) && return NTuple{N, Float32}(rewards), ForagingState(s.agent_positions, s.item_positions, ntuple(i -> true, M), s.agent_levels, s.item_levels, X, Y)
+
+		#make any agent moves that are attempted prior to checking to see if any intersect
+		candidate_positions = Vector{Position}([begin
+							   		p′ = move(s.agent_positions[i], action_tuple[a[i]])
+									x = p′[1]
+									y = p′[2]
+									if (x > X) || (y > Y) || (x < 1) || (y < 1) || any(i -> !item_collect′[i] && (s.item_positions[i] == p′), 1:M)
+										s.agent_positions[i]
+									else
+										p′
+									end
+							   end
+							   for i in 1:N])
+
+		agent_positions′ = ntuple(N) do i
+			p′ = candidate_positions[i]
+			#prevent an agent from moving if its move takes it into a space occupied by another agent
+			if in(p′, view(candidate_positions, 1:i-1)) || in(p′, view(candidate_positions, i+1:N))
+				s.agent_positions[i]
+			else
+				candidate_positions[i]
+			end
+		end
+
+		#modify state for collected item
+		# for i in 1:M
+		# 	if isone(item_checks[i])
+		# 		deleteat!(s′.item_positions, i)
+		# 		deleteat!(s′.item_levels, i)
+		# 		deleteat!(s′.item_collection_positions, i)
+		# 		push!(s′.available_positions, s.item_positions[i])
+		# 	end
+		# end
+
+		return NTuple{N, Float32}(rewards), ForagingState(agent_positions′, s.item_positions, item_collect′, s.agent_levels, s.item_levels, X, Y)
 	end
 
 	#make an environment for LBF as a Multi Agent MDP
-	function make_environment(;width = 8, height = 8, num_agents = 3, num_items = 5, max_agent_level = 2, max_item_level = 4)
-		grid_positions = [(x, y) for x in 1:width for y in 1:height]
-		position_set = Set(grid_positions)
-		position_inds = collect(eachindex(grid_positions))
-		position_lookup = makelookup(grid_positions)
-		num_positions = length(grid_positions)
+	function make_environment(;width = 8, height = 8, num_agents = 3, num_items = 5, min_agent_level = 1, max_agent_level = 2, min_item_level = 1, max_item_level = 4, reset_chance = 0f0, kwargs...)
+		init_state() = initialize_state(width, height, num_agents, num_items, min_agent_level, max_agent_level, min_item_level, max_item_level; kwargs...)
 
-		init_state() = initialize_state(grid_positions, position_set, num_agents, num_items, max_agent_level, max_item_level)
-
-		clamp_positions(p::Position) = (clamp(p[1], 1, width), clamp(p[2], 1, height))
-
-		function step(s::ForagingState{N, M}, a::NTuple{N, I}) where {N, M, I<:Integer}
-			s′ = deepcopy(s)
-			for i in 1:N
-				s′.agent_positions[i] = move(s.agent_positions[i], a[i])
-			end
-			
-			for i in 1:N
-				p′ = s′.agent_positions[i]
-				if !in(p′, s.available_positions) || in(p′, view(s′.agent_positions, 1:i-1)) || in(p′, view(s′.agent_positions, i+1:N))
-					s′.agent_positions[i] = s.agent_positions[i]
-				end
-			end
-
-			(rewards, item_checks) = attempt_collect(s, a)
-
-			#modify state for collected item
-			for i in 1:M
-				if isone(item_checks[i])
-					deleteat!(s′.item_positions, i)
-					deleteat!(s′.item_levels, i)
-					deleteat!(s′.item_collection_positions, i)
-					push!(s′.available_positions, s.item_positions[i])
-				end
-			end
-
-			return rewards, ForagingState(s′.agent_positions, s′.item_positions, s′.agent_levels, s′.item_levels, s′.available_positions, s′.item_collection_positions, s′.item_level_sum)
-		end
-
-		
-
-		ptf = StateGameTransitionDeterministic(step, init_state(), num_agents)
+		ptf = StateGameTransitionDeterministic((s, a) -> step(s, a, reset_chance), init_state(), num_agents)
 			
 		StateStochasticGame(ntuple(Returns(action_list), num_agents), ptf, init_state, isterm)
 	end
 
 	#make an environment for LBF based on example 5.3 which always uses the same initial state with 2 agents and 2 items in an 11x11 grid.  The tabular state space is constructed by iterating through all agent positions with all possible item combinations
-	function make_5_3_environment()
-		width = 11
-		height = 11
+	function make_5_3_environment(;width = 11, height = 11)
 		num_agents = 2
 		num_items = 2
 		max_agent_level = 1
@@ -668,85 +1038,59 @@ module LevelBasedForaging
 		num_positions = length(grid_positions)
 
 		function initialize_state()
-			p1 = (5, 5)
-			p2 = (7, 7)
+			x1 = floor(Int64, width / 2)
+			x2 = x1 + 2
+			p1 = (x1, x1)
+			p2 = (x2, x2)
 			item_positions = [p1, p2]
 
-			agent_positions = [(1, 1), (11, 1)]
+			agent_positions = [(1, 1), (width, 1)]
 	
 			item_levels = [1, 2]
 			agent_levels = [1, 1]
 			
-			ForagingState(agent_positions, item_positions, agent_levels, item_levels, setdiff(position_set, item_positions), [get_adjacent(p) for p in item_positions], 3)
-		end
-
-		clamp_positions(p::Position) = (clamp(p[1], 1, width), clamp(p[2], 1, height))
-
-		function step(s::ForagingState{2, M}, a::NTuple{2, I}) where {M, I<:Integer}
-			s.agent_positions[1] == s.agent_positions[2] && error("s: agents cannot occupy same position")
-			isterm(s) && return ([0f0, 0f0], s)
-			s′ = deepcopy(s)
-			for i in 1:2
-				p′ = move(s.agent_positions[i], a[i])
-				if in(p′, s.available_positions)
-					s′.agent_positions[i] = p′
-				end
-			end
-
-			if s′.agent_positions[1] == s′.agent_positions[2]
-				s′.agent_positions[1] = s.agent_positions[1]
-				s′.agent_positions[2] = s.agent_positions[2]
-			end
-
-			(rewards, item_checks) = attempt_collect(s, a)
-
-			#modify state for collected item
-			for i in 1:M
-				if isone(item_checks[i])
-					deleteat!(s′.item_positions, i)
-					deleteat!(s′.item_levels, i)
-					deleteat!(s′.item_collection_positions, i)
-					push!(s′.available_positions, s.item_positions[i])
-				end
-			end
-
-			return rewards, ForagingState(s′.agent_positions, s′.item_positions, s′.agent_levels, s′.item_levels, s′.available_positions, s′.item_collection_positions, 3)
+			ForagingState(agent_positions, item_positions, agent_levels, item_levels, width, height)
 		end
 
 		#initialize state with two items and iterate through all agent positions
 		s0 = initialize_state()
-		states = Vector{ForagingState}()
-		for p1 in s0.available_positions
-			for p2 in setdiff(s0.available_positions, (p1,))
-				push!(states, ForagingState([p1, p2], s0.item_positions, s0.agent_levels, s0.item_levels, s0.available_positions, s0.item_collection_positions, 3))
+		available_positions = setdiff(grid_positions, s0.item_positions)
+		
+		states = Vector{ForagingState{2, 2, width, height}}()
+		for p1 in available_positions
+			for p2 in setdiff(available_positions, (p1,))
+				push!(states, ForagingState((p1, p2), s0.item_positions, s0.agent_levels, s0.item_levels, width, height))
 			end
 		end
 
 		#only keep item 1 and iterate through all agent positions
-		s1 = ForagingState(s0.agent_positions, s0.item_positions[[1]], s0.agent_levels, s0.item_levels[[1]], 3, 11, 11)
-		for p1 in s1.available_positions
-			for p2 in setdiff(s1.available_positions, (p1,))
-				push!(states, ForagingState([p1, p2], s1.item_positions, s1.agent_levels, s1.item_levels, s1.available_positions, s1.item_collection_positions, 3))
+		available_positions′ = setdiff(grid_positions, s0.item_positions[2])
+		item_collect′ = (false, true)
+		for p1 in available_positions′
+			for p2 in setdiff(available_positions′, (p1,))
+				push!(states, ForagingState((p1, p2), s0.item_positions, item_collect′, s0.agent_levels, s0.item_levels, width, height))
 			end
 		end
 
 		#only keep item 2 and iterate through all agent positions
-		s2 = ForagingState(s0.agent_positions, s0.item_positions[[2]], s0.agent_levels, s0.item_levels[[2]], 3, 11, 11)
-		for p1 in s2.available_positions
-			for p2 in setdiff(s2.available_positions, (p1,))
-				push!(states, ForagingState([p1, p2], s2.item_positions, s2.agent_levels, s2.item_levels, s2.available_positions, s2.item_collection_positions, 3))
+		available_positions′ = setdiff(grid_positions, s0.item_positions[1])
+		item_collect′ = (true, false)
+		for p1 in available_positions′
+			for p2 in setdiff(available_positions′, (p1,))
+				push!(states, ForagingState((p1, p2), s0.item_positions, item_collect′, s0.agent_levels, s0.item_levels, width, height))
 			end
 		end
 
 		#remove both items and iterate through all agent positions
-		s3 = ForagingState(s0.agent_positions, Vector{Position}(), s0.agent_levels, Vector{Int64}(), 3, 11, 11)
-		for p1 in s3.available_positions
-			for p2 in setdiff(s3.available_positions, (p1,))
-				push!(states, ForagingState([p1, p2], s3.item_positions, s3.agent_levels, s3.item_levels, s3.available_positions, s3.item_collection_positions, 3))
+		available_positions′ = grid_positions
+		item_collect′ = (true, true)
+		for p1 in available_positions′
+			for p2 in setdiff(available_positions′, (p1,))
+				push!(states, ForagingState((p1, p2), s0.item_positions, item_collect′, s0.agent_levels, s0.item_levels, width, height))
 			end
 		end
 
-		state_index = Dict{ForagingState, Int64}(makelookup(states))
+		state_index = Dict{ForagingState{2, 2, width, height}, Int64}(makelookup(states))
 		
 		actions = ntuple(Returns(action_list), 2)
 		
@@ -757,17 +1101,98 @@ module LevelBasedForaging
 
 		for i_s in eachindex(states)
 			s = states[i_s]
-			terminal_states[i_s] = isempty(s.item_positions)
+			terminal_states[i_s] = isterm(s)
 		end
 
 		for i_s in eachindex(states)
 			for i_a1 in 1:6
 				for i_a2 in 1:6
 					s = states[i_s]
-					(rewards, s′) = step(s, (i_a1, i_a2))
+					(rewards, s′) = step(s, (i_a1, i_a2), 0f0)
 					i_s′ = state_index[s′]
 					state_transition_map[i_a1, i_a2, i_s] = i_s′
-					reward_transition_map[i_a1, i_a2, i_s] = Tuple(rewards)
+					reward_transition_map[i_a1, i_a2, i_s] = rewards
+				end
+			end
+		end
+
+		ptf = TabularGameTransition(state_transition_map, reward_transition_map)
+
+		function initialize_state_index()
+			s0 = initialize_state()
+			state_index[s0]
+		end
+			
+		TabularStochasticGame(states, actions, ptf, initialize_state_index, terminal_states; state_index = state_index)
+	end
+
+	function make_small_environment(;width = 3, height = 3)
+		num_agents = 2
+		num_items = 1
+		agent_level = 1
+		item_level = 2
+
+		reset_positions = [false, false]
+		
+		grid_positions = [(x, y) for x in 1:width for y in 1:height]
+		position_set = Set(grid_positions)
+		position_inds = collect(eachindex(grid_positions))
+		position_lookup = makelookup(grid_positions)
+		num_positions = length(grid_positions)
+
+		function initialize_state()
+			item_positions = [(width, height)]
+
+			agent_positions = [(1, 1), (width, 1)]
+	
+			item_levels = [2]
+			agent_levels = [1, 1]
+			
+			ForagingState(agent_positions, item_positions, agent_levels, item_levels, width, height)
+		end
+
+		#initialize state with two items and iterate through all agent positions
+		s0 = initialize_state()
+		available_positions = setdiff(grid_positions, s0.item_positions)
+		
+		states = Vector{ForagingState{2, 1, width, height}}()
+		for p1 in available_positions
+			for p2 in setdiff(available_positions, (p1,))
+				push!(states, ForagingState((p1, p2), s0.item_positions, s0.agent_levels, s0.item_levels, width, height))
+			end
+		end
+
+		#remove item and iterate through all agent positions
+		available_positions′ = grid_positions
+		item_collect′ = (true,)
+		for p1 in available_positions′
+			for p2 in setdiff(available_positions′, (p1,))
+				push!(states, ForagingState((p1, p2), s0.item_positions, item_collect′, s0.agent_levels, s0.item_levels, width, height))
+			end
+		end
+
+		state_index = Dict{ForagingState{2, 1, width, height}, Int64}(makelookup(states))
+		
+		actions = ntuple(Returns(action_list), 2)
+		
+		#transition maps have two dimensions of length 6 for the 6 actions available to each agent and then the last dimension is the state space
+		state_transition_map = Array{Int64, 3}(undef, 6, 6, length(states))
+		reward_transition_map = Array{NTuple{2, Float32}, 3}(undef, 6, 6, length(states))
+		terminal_states = BitVector(undef, length(states))
+
+		for i_s in eachindex(states)
+			s = states[i_s]
+			terminal_states[i_s] = isterm(s)
+		end
+
+		for i_s in eachindex(states)
+			for i_a1 in 1:6
+				for i_a2 in 1:6
+					s = states[i_s]
+					(rewards, s′) = step(s, (i_a1, i_a2), 0f0)
+					i_s′ = state_index[s′]
+					state_transition_map[i_a1, i_a2, i_s] = i_s′
+					reward_transition_map[i_a1, i_a2, i_s] = rewards
 				end
 			end
 		end
@@ -789,62 +1214,101 @@ end
 const lbf_test = LevelBasedForaging.make_environment(;num_agents = 3)
   ╠═╡ =#
 
-# ╔═╡ b149a025-3b7b-4ee5-a4a5-a6bcd035ad8b
-#=╠═╡
-const lbf_single_agent_reduction = StateMDP(lbf_test, sum)
-  ╠═╡ =#
-
-# ╔═╡ c1cc33d2-ad34-4ad8-b47a-6be3aa44c8ed
-md"""
-### Tabular Environment
-"""
-
 # ╔═╡ ac0a9ef8-6fbc-42f2-9433-727b235224e5
 # ╠═╡ skip_as_script = true
 #=╠═╡
 const ex_5_3 = LevelBasedForaging.make_5_3_environment()
   ╠═╡ =#
 
-# ╔═╡ 63062544-0375-4de4-86e3-385347033e5d
-md"""
-### Central Learning Reductions
-"""
+# ╔═╡ a691fc4c-8ac6-484a-983f-ad2f32d2e5e1
+const ex_small = LevelBasedForaging.make_small_environment()
 
-# ╔═╡ a91367b5-2bbf-4f17-9e04-5c939223c590
-md"""
-Using the sum of agent rewards as the scalar transformation, we can convert this multi-agent stochastic game into a Tabular MDP
-"""
-
-# ╔═╡ c46aa7de-2b71-4abe-b420-17802f027ab4
-md"""
-#### Value Iteration Solution
-
-With a tabular MDP, we can apply an exactly solution technique such as value iteration.
-"""
-
-# ╔═╡ aa1faa8e-1e85-4ce1-91c2-adacac30e80c
-md"""
-#### Ideal Episode Example 5.3 LBF
-"""
-
-# ╔═╡ 3f61b8ad-5f70-48f1-b967-33da2169e0fb
-md"""
-Sweep episode timesteps
-"""
-
-# ╔═╡ ac51b4e7-3097-420d-a2dc-0d939dea5456
+# ╔═╡ a7acda55-6a77-4b38-91cc-5b19a18c5934
 #=╠═╡
-md"""
-Play Movie: $(@bind timestep_select CheckBox())
-"""
+function plot_foraging_state(s::LevelBasedForaging.ForagingState{N, M, X, Y}) where {N, M, X, Y}
+	bottom_border = scatter(x = [0, X+1], y = [0, 0], mode = "lines", line_color = "black", showlegend = false, name = "Edge", line_width = 3)
+	top_border = scatter(x = [0, X+1], y = [Y+1, Y+1], mode = "lines", line_color = "black", showlegend = false, name = "Edge", line_width = 3)
+	left_border = scatter(x = [0, 0], y = [0, Y+1], mode = "lines", line_color = "black", showlegend = false, name = "Edge", line_width = 3)
+	right_border = scatter(x = [X+1, X+1], y = [0, Y+1], mode = "lines", line_color = "black", showlegend = false, name = "Edge", line_width = 3)
+	agent_xs = [s.agent_positions[i][1] for i in 1:N]
+	agent_ys = [s.agent_positions[i][2] for i in 1:N]
+	agent_trace = scatter(x = agent_xs, y = agent_ys, name = "Agents", mode = "markers")
+
+	#finds the items that have not yet been collected
+	item_inds = findall(.!s.item_collect)
+
+	item_xs = [s.item_positions[i][1] for i in item_inds]
+	item_ys = [s.item_positions[i][2] for i in item_inds]
+	item_trace = scatter(x = item_xs, y = item_ys, name = "Items", mode = "markers")
+
+	plot([agent_trace, item_trace, bottom_border, top_border, left_border, right_border], Layout(xaxis_title = "x", yaxis_title = "y", xaxis_range = [0, X+1], yaxis_range = [0, Y+1], yaxis_scaleanchor="x", width = 450, xaxis_dtick = 1, yaxis_dtick = 1, xaxis_tickvals = 1:X, xaxis_ticktext = string.(1:X), yaxis_tickvals = 1:Y, yaxis_ticktext = string.(1:Y), annotations = vcat([attr(x = s.agent_positions[i][1], y = s.agent_positions[i][2], text = s.agent_levels[i], showarrow = true,  font = attr(color = "blue", size = 14, weight = 1000, showdow = "auto")) for i in 1:N], [attr(x = s.item_positions[i][1], y = s.item_positions[i][2], text = s.item_levels[i], showarrow = true,  font = attr(color = "orange", size = 14, weight = 1000, showdow = "auto")) for i in item_inds])))
+end
   ╠═╡ =#
 
-# ╔═╡ 1fac0df2-9ce4-40d1-9296-a067906c2b01
-md"""
-#### Sarsa Solution
+# ╔═╡ 68a327a1-886c-4b87-9a26-0ecc97d77311
+#=╠═╡
+plot_foraging_state(lbf_test.initialize_state())
+  ╠═╡ =#
 
-We can also apply estimation techniques from reinforcement learning that rely on environment sampling.  Below an example of using sarsa and its variations.
-"""
+# ╔═╡ 924d646f-8fd7-4b0b-a5c5-0446abb6434e
+#=╠═╡
+plot_foraging_state(ex_5_3.states[6188])
+  ╠═╡ =#
+
+# ╔═╡ b149a025-3b7b-4ee5-a4a5-a6bcd035ad8b
+#=╠═╡
+const lbf_single_agent_reduction = StateMDP(lbf_test, sum)
+  ╠═╡ =#
+
+# ╔═╡ dac84639-2388-4ee8-9372-aae518a37f17
+#=╠═╡
+const tab_5_3 = TabularMDP(ex_5_3, sum)
+  ╠═╡ =#
+
+# ╔═╡ 83583ca7-bd96-4589-bbe0-e967849c3bd3
+#=╠═╡
+const value_iter = value_iteration_v(tab_5_3, 0.99f0)
+  ╠═╡ =#
+
+# ╔═╡ b0eb099f-d55e-4f2b-aa61-5b7dce374056
+#=╠═╡
+runepisode(tab_5_3; π = value_iter.optimal_policy)
+  ╠═╡ =#
+
+# ╔═╡ e5ef0212-ff93-4e2b-a7c1-d7ff53cbb8aa
+#=╠═╡
+const lbf_sarsa = q_learning(tab_5_3, 0.99f0; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
+  ╠═╡ =#
+
+# ╔═╡ b6df5773-94cd-488b-bb14-4713314a4575
+#=╠═╡
+function get_lbf_sarsa_statistics(algo; nruns = Base.Threads.nthreads(), kwargs...)
+	1:nruns |> Map() do i
+		output = algo(tab_5_3, 0.99f0; kwargs..., save_history = true)
+		output.reward_history
+	end |> foldxt((a, b) -> a .+ b) |> v -> v ./ nruns
+end
+  ╠═╡ =#
+
+# ╔═╡ 1d609b68-52a1-4459-a605-cae08785f306
+#=╠═╡
+const lbf_sarsa_avg = get_lbf_sarsa_statistics(sarsa; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
+  ╠═╡ =#
+
+# ╔═╡ 7201de00-04d0-4eea-b814-08fe26fbabb5
+#=╠═╡
+const lbf_expected_sarsa_avg = get_lbf_sarsa_statistics(expected_sarsa; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.1f0, save_history = true)
+  ╠═╡ =#
+
+# ╔═╡ 2d15d9d3-4fec-498f-a1c0-9ae3c10f2d2f
+#=╠═╡
+const lbf_q_learning_avg = get_lbf_sarsa_statistics(q_learning; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
+  ╠═╡ =#
+
+# ╔═╡ 09474fdf-df26-4e33-8f29-fc6ad9b85368
+#=╠═╡
+const lbf_double_q_learning_avg = get_lbf_sarsa_statistics(double_q_learning; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
+  ╠═╡ =#
 
 # ╔═╡ 5a291aa8-5aeb-4427-aff2-c30a154c435d
 #=╠═╡
@@ -869,18 +1333,54 @@ function plot_episode_rewards(vs::Vector{Vector{T}}, names::Vector{String}, n::I
 end
   ╠═╡ =#
 
-# ╔═╡ 775fd220-532d-49ba-968f-20781c5d6708
-md"""
-## Two-Player Soccer
+# ╔═╡ 791a661b-77fd-4ddd-8b82-56c64dcc5c22
+#=╠═╡
+const value_iter_episode = runepisode(tab_5_3; π = value_iter.optimal_policy)
+  ╠═╡ =#
 
-Each episode starts with the ball randomly assigned to one agent and the two agents on their respective side of the "field" offset vertically by one square.  Each agent can move in the four cardinal grid directions or stand still.  If the agent with the ball ateempts to move into the location of the other agent, it loses the ball to the other agent.  An agent scores a reward of +1 if it moves the ball into the opponent goal (and the opponent gets a reward of -1), after which a new episode starts.  Selected actions are executed in a random order.
-"""
+# ╔═╡ a113a20e-a599-4dbb-87a0-f943245d75ce
+#=╠═╡
+@bind timestep Slider(1:length(value_iter_episode[1])+1)
+  ╠═╡ =#
+
+# ╔═╡ 57d02e2c-4387-4345-bed3-504fafcd2a26
+#=╠═╡
+@bind movie_timestep Clock(;max_value = length(value_iter_episode[1])+1, repeat = true, interval = 0.4)
+  ╠═╡ =#
+
+# ╔═╡ 1f7c4a86-d530-4d17-9640-6c1c7315f1bc
+#=╠═╡
+function plot_lbf_episode(timestep)
+	@htl("""
+		 <div style = "display: flex; height: 420px;">
+		 <div>
+		 State Value Function: $(round(value_iter.final_value[vcat(value_iter_episode[1], value_iter_episode[4])[timestep]]; sigdigits = 3)), Numerical Annotations = Level
+		 $(plot_foraging_state(tab_5_3.states[vcat(value_iter_episode[1], value_iter_episode[4])[timestep]]))
+		 </div>
+		 <div>
+		 <div style = "width: 600px;">
+		 Agent Rewards per Time Step
+		 $(plot([scatter(x = [timestep], y = 0, mode = "markers", color = "red", name = "Current Timestep"), bar(y = [0; 0; value_iter_episode[3]], name = "Agent Reward Sum")], Layout(yaxis_title = "Reward", xaxis_title = "Episode Step", xaxis_range = [0, length(value_iter_episode[1])+2])))
+		 </div>
+		 </div>
+		 """)
+end
+  ╠═╡ =#
+
+# ╔═╡ fdcfd9d8-5c2e-4e6f-a408-7c530b1bc5ff
+#=╠═╡
+if timestep_select
+	plot_lbf_episode(movie_timestep)
+else
+	plot_lbf_episode(timestep)
+end
+  ╠═╡ =#
 
 # ╔═╡ 604461b5-484e-468d-ada7-8f70d3b222c8
 module TwoPlayerSoccer
 	#import general RL and MARL types and functions
-	import RL_Module
-	import TabularRL.makelookup
+	import ..RL_Module
+	import ..makelookup
 
 	import ..TabularZeroSumGameTransitionSampler
 	import ..TabularZeroSumGameStochasticTransition
@@ -1091,12 +1591,6 @@ end
 const soccer_env = TwoPlayerSoccer.make_sample_environment()
   ╠═╡ =#
 
-# ╔═╡ 74be33d5-a7ae-4b8c-8db9-0c37e7974549
-# ╠═╡ skip_as_script = true
-#=╠═╡
-const soccer_env_dist = TwoPlayerSoccer.make_distribution_environment()
-  ╠═╡ =#
-
 # ╔═╡ 07f82b02-a479-4b1d-824d-7d18ced98ad3
 #=╠═╡
 findall(s -> (s.agent_positions[1] == s.agent_positions[2]), soccer_env.states)
@@ -1107,263 +1601,16 @@ findall(s -> (s.agent_positions[1] == s.agent_positions[2]), soccer_env.states)
 soccer_env.ptf(soccer_env.initialize_state_index(), (3, 5))
   ╠═╡ =#
 
+# ╔═╡ 74be33d5-a7ae-4b8c-8db9-0c37e7974549
+# ╠═╡ skip_as_script = true
+#=╠═╡
+const soccer_env_dist = TwoPlayerSoccer.make_distribution_environment()
+  ╠═╡ =#
+
 # ╔═╡ 90680746-e84b-4a63-8809-568f91cd0475
 #=╠═╡
 soccer_env_dist.ptf(soccer_env.initialize_state_index(), (3, 5))
   ╠═╡ =#
-
-# ╔═╡ 91c667a3-293d-44d7-9437-901274f27af9
-md"""
-## Non-Repeated Zero-Sum Games
-"""
-
-# ╔═╡ 2bfa6ee7-d580-4ea0-9551-28c34570dc1e
-function create_non_repeated_zero_sum_game(reward_matrix::Matrix{T}, agent_actions::NTuple{2, Vector{A}}) where {A, T<:Real}
-	(na1, na2) = size(reward_matrix)
-
-	state_transition_map = ones(Int64, na1, na2, 2) .* 2
-	reward_transition_map = zeros(Float32, na1, na2, 2)
-	for i_a1 in 1:na1
-		for i_a2 in 1:na2
-			reward_transition_map[i_a1, i_a2, 1] = reward_matrix[i_a1, i_a2]
-		end
-	end
-
-	ptf = TabularZeroSumGameTransition(state_transition_map, reward_transition_map)
-
-	initialize_state_index() = 1
-
-	TabularStochasticGame([:play, :term], agent_actions, ptf, initialize_state_index, BitVector([false, true]))
-end
-
-# ╔═╡ b53e1cfd-4f81-4e1e-bff0-3435d3fcd221
-md"""
-## Rock-Paper-Scissors
-"""
-
-# ╔═╡ 769e5dc3-684e-4d36-a63f-0edb90331c59
-module RockPaperScissors
-	const actions = [:rock, :paper, :scissors]
-	const payout_matrix = [0f0 -1f0 1f0; 1f0 0f0 -1f0; -1f0 1f0 0f0]
-
-	import ..create_non_repeated_zero_sum_game
-	non_repeated_game = create_non_repeated_zero_sum_game(payout_matrix, ntuple(i -> actions, 2))
-end
-
-# ╔═╡ 5629f70c-b2cc-4a68-b5f0-9a11aef6dcbc
-RockPaperScissors.non_repeated_game.ptf(1, (3, 2))
-
-# ╔═╡ c2bec8e1-9df1-4f5f-8e92-0f6f5f9955a4
-md"""
-## Non-Repeated General-Sum Games
-"""
-
-# ╔═╡ 9f05e777-fb94-42f9-9cd7-b461f10f199d
-function create_non_repeated_game(reward_matrices::NTuple{N, Matrix{T}}, agent_actions::NTuple{N, Vector{A}}) where {A, T<:Real, N}
-	ns = size(first(reward_matrices))
-
-	test_mat = ones(Int64, ns...)
-	state_transition_map = ones(Int64, ns..., 2) .* 2
-	reward_transition_map = Array{NTuple{N, T}, N+1}(undef, ns..., 2)
-	
-	for i in CartesianIndices(test_mat)
-		reward_transition_map[i, 1] = NTuple{N, T}(reward_matrices[n][i] for n in 1:N)
-		reward_transition_map[i, 2] = NTuple{N, T}(zero(T) for n in 1:N)
-	end
-
-	ptf = TabularGameTransition(state_transition_map, reward_transition_map)
-
-	initialize_state_index() = 1
-
-	TabularStochasticGame([:play, :term], agent_actions, ptf, initialize_state_index, BitVector([false, true]))
-end
-
-# ╔═╡ a2284047-0aaf-41b2-a6a0-de082cdeb5a2
-create_non_repeated_game(([1. -1.; -1. 1.], [-1. 1.; 1. -1.]), ([1, 2], [1, 2]))
-
-# ╔═╡ cc259b71-cbe0-4990-ba6f-b495f6b0a2b7
-md"""
-# Independing Learning Algorithms
-"""
-
-# ╔═╡ 9b75d562-ac45-406a-867b-b6d2af5822ee
-#for a general sum game, the rewards are a tuple of values with one value per agent.  In a zero sum game and common reward game, there is only one reward value.  For a zero sum game that value is negative for agent 2 and positive for agent 1.  In a common reward game it is equal for all agents.
-begin
-	get_game_reward(ptf, rewards::NTuple{N, T}, n::Integer) where {N, T<:Real} = rewards[n]
-	get_game_reward(::AbstractTabularZeroSumGameTransition{T}, r::T, ::Val{1}) where T<:Real = r
-	get_game_reward(::AbstractTabularZeroSumGameTransition{T}, r::T, ::Val{2}) where T<:Real = -r
-	get_game_reward(ptf::AbstractTabularZeroSumGameTransition{T}, r::T, n::Integer) where T<:Real = get_game_reward(ptf, r, Val(n))
-	get_game_reward(::AbstractTabularCommonRewardGameTransition{T}, r::T, ::Integer) where T<:Real = r
-end
-
-# ╔═╡ eb6189fd-68e0-435f-b736-dab754522ea9
-begin
-	function update_transitions!(state_transition_map::Matrix{SparseVector{T, Int64}}, reward_transitions::Matrix{Dict{Int64, T}}, ptf::Union{TabularGameStochasticTransition{T, N, Np1}, TabularZeroSumGameStochasticTransition{T}, TabularCommonRewardGameStochasticTransition{T, N}}, cart_ind::CartesianIndex, i_a::Integer, i_s::Integer, p::T, agent_index::Integer) where {T<:Real, N, Np1}
-		probs = ptf.state_transition_map[cart_ind]
-		agent_rewards = ptf.reward_transition_map[cart_ind]
-
-		for i in eachindex(probs.nzind)
-			i_s′ = probs.nzind[i]
-			r = get_game_reward(ptf, agent_rewards[i], agent_index)
-			p2 = probs.nzval[i]
-			state_transition_map[i_a, i_s][i_s′] += p*p2
-			
-			if !haskey(reward_transitions[i_a, i_s], i_s′)
-				reward_transitions[i_a, i_s][i_s′] = p*p2*r
-			else
-				reward_transitions[i_a, i_s][i_s′] += p*p2*r
-			end
-		end
-	end
-
-	function update_transitions!(state_transition_map::Matrix{SparseVector{T, Int64}}, reward_transitions::Matrix{Dict{Int64, T}}, ptf::Union{TabularGameDeterministicTransition{T, N, Np1}, TabularZeroSumGameDeterministicTransition{T}, TabularCommonRewardGameDeterministicTransition{T, N}}, cart_ind::CartesianIndex, i_a::Integer, i_s::Integer, p::T, agent_index::Integer) where {T<:Real, N, Np1}
-		i_s′ = ptf.state_transition_map[cart_ind]
-		r = get_game_reward(ptf, ptf.reward_transition_map[cart_ind], agent_index)
-		state_transition_map[i_a, i_s][i_s′] += p
-		if !haskey(reward_transitions[i_a, i_s], i_s′)
-			reward_transitions[i_a, i_s][i_s′] = p*r
-		else
-			reward_transitions[i_a, i_s][i_s′] += p*r
-		end
-	end
-end
-
-# ╔═╡ 475e855e-ca4b-4466-ba8b-ca0edefb4f82
-#convert a tabular stochastic game into a tabular mdp for agent i using fixed policies for the other agents
-function TabularRL.TabularStochasticTransition(ptf::Union{TabularGameTransition{T, N, Np1, ST, RT}, TabularZeroSumGameTransition{T, ST, RT}, TabularCommonRewardGameTransition{T, N, Np1, ST, RT}}, agent_index::Integer, π_others::NTuple{Nm1, M}) where {T<:Real, N, Np1, Nm1, T2<:Real, M <: AbstractMatrix{T2}, ST <: Union{Int64, SparseVector{T, Int64}}, RT <: Union{T, Vector{T}}}
-	check_policies(ptf, π_others)
-	
-	num_actions = size(ptf.state_transition_map, agent_index)
-	num_states = get_num_states(ptf)
-
-	(other_inds, state_index) = get_other_inds(ptf, agent_index)
-	
-	state_transition_map = Matrix{SparseVector{T, Int64}}(undef, num_actions, num_states)
-	reward_transitions = Matrix{Dict{Int64, T}}(undef, num_actions, num_states)
-	reward_transition_map = Matrix{Vector{T}}(undef, num_actions, num_states)
-	for i in eachindex(state_transition_map)
-		state_transition_map[i] = SparseVector{T, Int64}(zeros(T, num_states))
-		reward_transitions[i] = Dict{Int64, T}()
-		reward_transition_map[i] = Vector{T}()
-	end
-
-	cart_inds = CartesianIndices(ptf.state_transition_map)
-	
-	for cart_ind in cart_inds
-		i_s = cart_ind[state_index]
-		i_a = cart_ind[agent_index]
-
-		p = one(T)
-		for (i, n) in enumerate(other_inds)
-			i_a_other = cart_ind[n]
-			p *= π_others[i][i_a_other, i_s]
-		end
-
-		update_transitions!(state_transition_map, reward_transitions, ptf, cart_ind, i_a, i_s, p, agent_index)
-	end
-
-	for i_s in 1:num_states
-		for i_a in 1:num_actions
-			for i_s′ in state_transition_map[i_a, i_s].nzind
-				ptot = state_transition_map[i_a, i_s][i_s′]
-				r_avg = reward_transitions[i_a, i_s][i_s′] / ptot
-				push!(reward_transition_map[i_a, i_s], r_avg)
-			end
-		end
-	end
-
-	TabularTransitionDistribution(state_transition_map, reward_transition_map)
-end
-
-# ╔═╡ 89b1cb3b-bf58-4ca3-a08d-736ee2af2b0f
-function TabularRL.TabularMDP(stochastic_game::TabularStochasticGame{T, S, A, N, P, F}, agent_index::Integer, π_others::NTuple{Nm1, M}) where {T<:Real, S, A, N, P<:Union{TabularGameTransition, TabularZeroSumGameTransition, TabularCommonRewardGameTransition}, F<:Function, Nm1, T2<:Real, M <: AbstractMatrix{T2}}
-	@assert Nm1 == (N - 1) "There must be $(N-1) policies for the other agents"
-	agent_actions = stochastic_game.agent_actions
-
-	ptf = TabularStochasticTransition(stochastic_game.ptf, agent_index, π_others)
-	TabularMDP(stochastic_game.states, agent_actions[agent_index], ptf, stochastic_game.initialize_state_index, stochastic_game.terminal_states; state_index = stochastic_game.state_index)
-end
-
-# ╔═╡ dac84639-2388-4ee8-9372-aae518a37f17
-#=╠═╡
-const tab_5_3 = TabularMDP(ex_5_3, sum)
-  ╠═╡ =#
-
-# ╔═╡ 83583ca7-bd96-4589-bbe0-e967849c3bd3
-#=╠═╡
-const value_iter = value_iteration_v(tab_5_3, 0.99f0)
-  ╠═╡ =#
-
-# ╔═╡ b0eb099f-d55e-4f2b-aa61-5b7dce374056
-#=╠═╡
-runepisode(tab_5_3; π = value_iter.optimal_policy)
-  ╠═╡ =#
-
-# ╔═╡ e5ef0212-ff93-4e2b-a7c1-d7ff53cbb8aa
-#=╠═╡
-const lbf_sarsa = q_learning(tab_5_3, 0.99f0; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
-  ╠═╡ =#
-
-# ╔═╡ b6df5773-94cd-488b-bb14-4713314a4575
-#=╠═╡
-function get_lbf_sarsa_statistics(algo; nruns = Base.Threads.nthreads(), kwargs...)
-	1:nruns |> Map() do i
-		output = algo(tab_5_3, 0.99f0; kwargs..., save_history = true)
-		output.reward_history
-	end |> foldxt((a, b) -> a .+ b) |> v -> v ./ nruns
-end
-  ╠═╡ =#
-
-# ╔═╡ 1d609b68-52a1-4459-a605-cae08785f306
-#=╠═╡
-const lbf_sarsa_avg = get_lbf_sarsa_statistics(sarsa; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
-  ╠═╡ =#
-
-# ╔═╡ 7201de00-04d0-4eea-b814-08fe26fbabb5
-#=╠═╡
-const lbf_expected_sarsa_avg = get_lbf_sarsa_statistics(expected_sarsa; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.1f0, save_history = true)
-  ╠═╡ =#
-
-# ╔═╡ 2d15d9d3-4fec-498f-a1c0-9ae3c10f2d2f
-#=╠═╡
-const lbf_q_learning_avg = get_lbf_sarsa_statistics(q_learning; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
-  ╠═╡ =#
-
-# ╔═╡ 09474fdf-df26-4e33-8f29-fc6ad9b85368
-#=╠═╡
-const lbf_double_q_learning_avg = get_lbf_sarsa_statistics(double_q_learning; max_steps = 1_000_000, α = 0.2f0, ϵ = 0.01f0, save_history = true)
-  ╠═╡ =#
-
-# ╔═╡ 791a661b-77fd-4ddd-8b82-56c64dcc5c22
-#=╠═╡
-const value_iter_episode = runepisode(tab_5_3; π = value_iter.optimal_policy)
-  ╠═╡ =#
-
-# ╔═╡ a113a20e-a599-4dbb-87a0-f943245d75ce
-#=╠═╡
-@bind timestep Slider(1:length(value_iter_episode[1])+1)
-  ╠═╡ =#
-
-# ╔═╡ 57d02e2c-4387-4345-bed3-504fafcd2a26
-#=╠═╡
-@bind movie_timestep Clock(;max_value = length(value_iter_episode[1])+1, repeat = true, interval = 0.4)
-  ╠═╡ =#
-
-# ╔═╡ c755f0b1-2299-42b4-a28d-d53980260e79
-begin
-	initialize_reward_history(::AbstractTabularGameTransition{T, N}) where {N, T<:Real} = Vector{NTuple{N, T}}()
-	initialize_reward_history(::AbstractTabularZeroSumGameTransition{T}) where T<:Real = Vector{T}()
-	initialize_reward_history(::AbstractTabularCommonRewardGameTransition{T}) where T<:Real = Vector{T}()
-end
-
-# ╔═╡ 50422bb8-ff98-4803-8a3b-9a42454d793d
-function get_max_q(q::Matrix{T}, i_s::Integer) where T<:Real
-	maxq = typemin(T)
-	@inbounds @simd for i_a in 1:size(q, 1)
-		maxq = max(maxq, q[i_a, i_s])
-	end
-	return maxq
-end
 
 # ╔═╡ ff335a51-e2ed-4313-af7b-1983c0a488a7
 function independent_q_learning!((value_estimates, policies)::Tuple{NTuple{N, Matrix{T}}, NTuple{N, Matrix{T}}}, game::TabularStochasticGame{T, S, A, N, P, F}, γ::T, max_episodes::Integer, max_steps::Integer; i_s0 = game.initialize_state_index(), save_history = false, train_policies::AbstractVector{I} = 1:N, α::T = one(T) / 10, α_decay::T = one(T), ϵ::T = one(T) / 10) where {T<:Real,S, A, P, F<:Function, N, I <: Integer}
@@ -1421,32 +1668,23 @@ function independent_q_learning!((value_estimates, policies)::Tuple{NTuple{N, Ma
 	(value_estimates = value_estimates, policies = policies, reward_history = reward_history, episode_steps = episode_steps)
 end
 
-# ╔═╡ 3f44f098-5aef-4287-901e-67a6062f0f02
-function make_random_policies(game::TabularStochasticGame{T, S, A, N, P, F}) where {T<:Real, S, A, P, F, N}
-	n_actions = Tuple(length(a) for a in game.agent_actions)
-	n_states = length(game.states)
-	NTuple{N, Matrix{T}}(ones(T, n_actions[n], n_states) ./ n_actions[n] for n in 1:N)
-end
-
-# ╔═╡ d95d9945-944a-497b-b07b-7b4d4eb1f01d
-function initialize_agent_action_values(game::TabularStochasticGame{T, S, A, N, P, F}, init_value::T) where {T<:Real, S, A, P, F<:Function, N}
-	n_actions = NTuple{N, Int64}(length(a) for a in game.agent_actions)
-	n_states = length(game.states)
-	NTuple{N, Matrix{T}}(ones(T, n_actions[n], n_states) .* init_value for n in 1:N)
-end
-
 # ╔═╡ 3ab5ea43-f8d5-46ac-a407-fd7c9af50540
 independent_q_learning(game::TabularStochasticGame{T, S, A, N, P, F}, γ::T; max_steps = 100_000, max_episodes = typemax(Int64), init_value = zero(T), qs::NTuple{N, Matrix{T}} = initialize_agent_action_values(game, init_value), πs::NTuple{N, Matrix{T}} = make_random_policies(game), kwargs...) where {T<:Real, S, A, N, P, F<:Function} = independent_q_learning!((qs, πs), game, γ, max_episodes, max_steps; kwargs...) 
-
-# ╔═╡ eec99b81-8150-4a65-90a0-283cd5da877a
-md"""
-## Level-Based Foraging Test (General Sum Game)
-"""
 
 # ╔═╡ d4661036-1e7a-48ba-a05a-51537b7b4910
 # ╠═╡ skip_as_script = true
 #=╠═╡
 const ex_5_3_iql = independent_q_learning(ex_5_3, 0.99f0; α = 0.01f0, max_steps = 1_000_000, save_history = true)
+  ╠═╡ =#
+
+# ╔═╡ bf52bae8-97d4-40b3-80c9-4afa2f77bd99
+#=╠═╡
+const soccer_sample_iql = independent_q_learning(soccer_env, 0.9f0; α = 0.1f0, max_steps = 1_000_000, save_history = true)
+  ╠═╡ =#
+
+# ╔═╡ 4e008a70-2536-440a-afcb-c8b9772f4c8c
+#=╠═╡
+const soccer_dist_iql = independent_q_learning(soccer_env_dist, 0.9f0; α = 0.1f0, max_steps = 1_000_000, save_history = true)
   ╠═╡ =#
 
 # ╔═╡ b27cbf6a-2202-40d8-8946-7d9fc6def3e9
@@ -1470,21 +1708,6 @@ const lbf_iql_avg = get_lbf_iql_statistics(;max_steps = 1_000_000, α = 0.2f0, �
 plot_episode_rewards([lbf_sarsa_avg, lbf_expected_sarsa_avg, lbf_q_learning_avg, lbf_double_q_learning_avg, lbf_iql_avg], ["Sarsa", "Expected Sarsa", "Q-learning", "Double Q-learning", "Independent Q-learning"], 30_000)
   ╠═╡ =#
 
-# ╔═╡ 8c6f4ab7-9172-4723-bc2b-e61fe0315e1c
-md"""
-## Soccer Game Test (Zero Sum Game)
-"""
-
-# ╔═╡ bf52bae8-97d4-40b3-80c9-4afa2f77bd99
-#=╠═╡
-const soccer_sample_iql = independent_q_learning(soccer_env, 0.9f0; α = 0.1f0, max_steps = 1_000_000, save_history = true)
-  ╠═╡ =#
-
-# ╔═╡ 4e008a70-2536-440a-afcb-c8b9772f4c8c
-#=╠═╡
-const soccer_dist_iql = independent_q_learning(soccer_env_dist, 0.9f0; α = 0.1f0, max_steps = 1_000_000, save_history = true)
-  ╠═╡ =#
-
 # ╔═╡ d9102b45-90da-4c86-8ffe-5fc35847efbf
 #=╠═╡
 TabularMDP(soccer_env, true, soccer_sample_iql.policies[1])
@@ -1505,86 +1728,21 @@ TabularMDP(soccer_env_dist, true, make_random_policies(soccer_env)[2])
 lbf_conv_test = TabularMDP(ex_5_3, true, make_random_policies(ex_5_3)[2])
   ╠═╡ =#
 
-# ╔═╡ 75a6b525-a507-4cf0-9ba7-ec1e76e86465
-md"""
-# Visualization Tools
-
-"""
-
-# ╔═╡ 9a0a63a1-0292-4937-9d7f-8c18bc3eb28b
-md"""
-## Level-Based Foraging
-"""
-
-# ╔═╡ a7acda55-6a77-4b38-91cc-5b19a18c5934
-#=╠═╡
-function plot_foraging_state(s::LevelBasedForaging.ForagingState{N, M}, xmax::Integer, ymax::Integer) where {N, M}
-	bottom_border = scatter(x = [0, xmax+1], y = [0, 0], mode = "lines", line_color = "black", showlegend = false, name = "Edge", line_width = 3)
-	top_border = scatter(x = [0, xmax+1], y = [ymax+1, ymax+1], mode = "lines", line_color = "black", showlegend = false, name = "Edge", line_width = 3)
-	left_border = scatter(x = [0, 0], y = [0, ymax+1], mode = "lines", line_color = "black", showlegend = false, name = "Edge", line_width = 3)
-	right_border = scatter(x = [xmax+1, xmax+1], y = [0, ymax+1], mode = "lines", line_color = "black", showlegend = false, name = "Edge", line_width = 3)
-	agent_xs = [s.agent_positions[i][1] for i in 1:N]
-	agent_ys = [s.agent_positions[i][2] for i in 1:N]
-	agent_trace = scatter(x = agent_xs, y = agent_ys, name = "Agents", mode = "markers")
-
-	item_xs = [s.item_positions[i][1] for i in 1:M]
-	item_ys = [s.item_positions[i][2] for i in 1:M]
-	item_trace = scatter(x = item_xs, y = item_ys, name = "Items", mode = "markers")
-
-	plot([agent_trace, item_trace, bottom_border, top_border, left_border, right_border], Layout(xaxis_title = "x", yaxis_title = "y", xaxis_range = [0, xmax+1], yaxis_range = [0, ymax+1], yaxis_scaleanchor="x", width = 450, xaxis_dtick = 1, yaxis_dtick = 1, xaxis_tickvals = 1:xmax, xaxis_ticktext = string.(1:xmax), yaxis_tickvals = 1:ymax, yaxis_ticktext = string.(1:ymax), annotations = vcat([attr(x = s.agent_positions[i][1], y = s.agent_positions[i][2], text = s.agent_levels[i], showarrow = true,  font = attr(color = "blue", size = 14, weight = 1000, showdow = "auto")) for i in 1:N], [attr(x = s.item_positions[i][1], y = s.item_positions[i][2], text = s.item_levels[i], showarrow = true,  font = attr(color = "orange", size = 14, weight = 1000, showdow = "auto")) for i in 1:M])))
-end
-  ╠═╡ =#
-
-# ╔═╡ 1f7c4a86-d530-4d17-9640-6c1c7315f1bc
-#=╠═╡
-function plot_lbf_episode(timestep)
-	@htl("""
-		 <div style = "display: flex; height: 420px;">
-		 <div>
-		 State Value Function: $(round(value_iter.final_value[vcat(value_iter_episode[1], value_iter_episode[4])[timestep]]; sigdigits = 3)), Numerical Annotations = Level
-		 $(plot_foraging_state(tab_5_3.states[vcat(value_iter_episode[1], value_iter_episode[4])[timestep]], 11, 11))
-		 </div>
-		 <div>
-		 <div style = "width: 600px;">
-		 Agent Rewards per Time Step
-		 $(plot([scatter(x = [timestep], y = 0, mode = "markers", color = "red", name = "Current Timestep"), bar(y = [0; 0; value_iter_episode[3]], name = "Agent Reward Sum")], Layout(yaxis_title = "Reward", xaxis_title = "Episode Step", xaxis_range = [0, length(value_iter_episode[1])+2])))
-		 </div>
-		 </div>
-		 """)
-end
-  ╠═╡ =#
-
-# ╔═╡ fdcfd9d8-5c2e-4e6f-a408-7c530b1bc5ff
-#=╠═╡
-if timestep_select
-	plot_lbf_episode(movie_timestep)
-else
-	plot_lbf_episode(timestep)
-end
-  ╠═╡ =#
-
-# ╔═╡ 924d646f-8fd7-4b0b-a5c5-0446abb6434e
-#=╠═╡
-plot_foraging_state(ex_5_3.states[6188], 11, 11)
-  ╠═╡ =#
-
-# ╔═╡ 1a488045-380d-4441-a6ec-186d3c53420d
-md"""
-# Dependencies
-"""
-
 # ╔═╡ 5904f5e9-93b4-479d-9fc5-58efb00f8e01
+# ╠═╡ skip_as_script = true
+#=╠═╡
 html"""
 <style>
 	main {
 		margin: 0 auto;
 		max-width: min(1600px, 90%);
-		padding-left: max(50px, 10%);
-		padding-right: max(10px, 5%);
+		padding-left: max(50px, 5%);
+		padding-right: max(200px, 5%);
 		font-size: max(10px, min(24px, 2vw));
 	}
 </style>
 """
+  ╠═╡ =#
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1601,24 +1759,24 @@ PlutoProfile = "ee419aa8-929d-45cd-acf6-76bd043cd7ba"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 
 [compat]
-BenchmarkTools = "~1.6.3"
-CSV = "~0.10.15"
+BenchmarkTools = "~1.7.0"
+CSV = "~0.10.16"
 DataFrames = "~1.8.1"
 HypertextLiteral = "~0.9.5"
 LaTeXStrings = "~1.4.0"
 PlutoDevMacros = "~0.9.2"
 PlutoPlotly = "~0.6.5"
 PlutoProfile = "~0.4.0"
-PlutoUI = "~0.7.75"
+PlutoUI = "~0.7.80"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.12.3"
+julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "170a5c24fc6462387ae568ecfb37939d5fab920d"
+project_hash = "b754673dde3a5e79a95d244265098982d65ce822"
 
 [[deps.AbstractPlutoDingetjes]]
 deps = ["Pkg"]
@@ -1645,21 +1803,21 @@ version = "1.11.0"
 
 [[deps.BenchmarkTools]]
 deps = ["Compat", "JSON", "Logging", "Printf", "Profile", "Statistics", "UUIDs"]
-git-tree-sha1 = "7fecfb1123b8d0232218e2da0c213004ff15358d"
+git-tree-sha1 = "6876e30dc02dc69f0613cb6ece242144f2ca9e56"
 uuid = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
-version = "1.6.3"
+version = "1.7.0"
 
 [[deps.CSV]]
 deps = ["CodecZlib", "Dates", "FilePathsBase", "InlineStrings", "Mmap", "Parsers", "PooledArrays", "PrecompileTools", "SentinelArrays", "Tables", "Unicode", "WeakRefStrings", "WorkerUtilities"]
-git-tree-sha1 = "deddd8725e5e1cc49ee205a1964256043720a6c3"
+git-tree-sha1 = "8d8e0b0f350b8e1c91420b5e64e5de774c2f0f4d"
 uuid = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
-version = "0.10.15"
+version = "0.10.16"
 
 [[deps.CodeTracking]]
-deps = ["InteractiveUtils", "UUIDs"]
-git-tree-sha1 = "b7231a755812695b8046e8471ddc34c8268cbad5"
+deps = ["InteractiveUtils", "REPL", "UUIDs"]
+git-tree-sha1 = "cfb7a2e89e245a9d5016b70323db412b3a7438d5"
 uuid = "da1fd8a2-8d9e-5ec2-8556-3022fb5608a2"
-version = "3.0.0"
+version = "3.0.2"
 
 [[deps.CodecZlib]]
 deps = ["TranscodingStreams", "Zlib_jll"]
@@ -1730,9 +1888,9 @@ version = "1.8.1"
 
 [[deps.DataStructures]]
 deps = ["OrderedCollections"]
-git-tree-sha1 = "e357641bb3e0638d353c4b29ea0e40ea644066a6"
+git-tree-sha1 = "e86f4a2805f7f19bec5129bc9150c38208e5dc23"
 uuid = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
-version = "0.19.3"
+version = "0.19.4"
 
 [[deps.DataValueInterfaces]]
 git-tree-sha1 = "bfc1187b79289637fa0ef6d4436ebdfe6905cbd6"
@@ -1762,9 +1920,9 @@ version = "1.7.0"
 
 [[deps.FileIO]]
 deps = ["Pkg", "Requires", "UUIDs"]
-git-tree-sha1 = "d60eb76f37d7e5a40cc2e7c36974d864b82dc802"
+git-tree-sha1 = "6522cfb3b8fe97bec632252263057996cbd3de20"
 uuid = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
-version = "1.17.1"
+version = "1.18.0"
 
     [deps.FileIO.extensions]
     HTTPExt = "HTTP"
@@ -1868,9 +2026,9 @@ version = "0.21.4"
 
 [[deps.JuliaInterpreter]]
 deps = ["CodeTracking", "InteractiveUtils", "Random", "UUIDs"]
-git-tree-sha1 = "c98fa9e3a241e92895be025614ec33eca0ffa5f7"
+git-tree-sha1 = "58927c485919bf17ea308d9d82156de1adf4b006"
 uuid = "aa1ae85d-cabe-5617-a682-6adf51b2e16a"
-version = "0.10.8"
+version = "0.10.12"
 
 [[deps.JuliaSyntaxHighlighting]]
 deps = ["StyledStrings"]
@@ -1953,7 +2111,7 @@ version = "1.11.0"
 
 [[deps.MozillaCACerts_jll]]
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
-version = "2025.5.20"
+version = "2025.11.4"
 
 [[deps.NetworkOptions]]
 uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
@@ -1997,9 +2155,9 @@ weakdeps = ["REPL"]
 
 [[deps.PlotlyBase]]
 deps = ["ColorSchemes", "Colors", "Dates", "DelimitedFiles", "DocStringExtensions", "JSON", "LaTeXStrings", "Logging", "Parameters", "Pkg", "REPL", "Requires", "Statistics", "UUIDs"]
-git-tree-sha1 = "49c457ee4c9c6f5bdf2f6f1a69e66976aaecfcdb"
+git-tree-sha1 = "6256ab3ee24ef079b3afa310593817e069925eeb"
 uuid = "a03496cd-edff-5a9b-9e67-9cda94a718b5"
-version = "0.8.22"
+version = "0.8.23"
 
     [deps.PlotlyBase.extensions]
     DataFramesExt = "DataFrames"
@@ -2040,10 +2198,10 @@ uuid = "ee419aa8-929d-45cd-acf6-76bd043cd7ba"
 version = "0.4.0"
 
 [[deps.PlutoUI]]
-deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "Downloads", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
-git-tree-sha1 = "db8a06ef983af758d285665a0398703eb5bc1d66"
+deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "Downloads", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
+git-tree-sha1 = "fbc875044d82c113a9dee6fc14e16cf01fd48872"
 uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
-version = "0.7.75"
+version = "0.7.80"
 
 [[deps.PooledArrays]]
 deps = ["DataAPI", "Future"]
@@ -2059,15 +2217,21 @@ version = "1.3.3"
 
 [[deps.Preferences]]
 deps = ["TOML"]
-git-tree-sha1 = "0f27480397253da18fe2c12a4ba4eb9eb208bf3d"
+git-tree-sha1 = "8b770b60760d4451834fe79dd483e318eee709c4"
 uuid = "21216c6a-2e73-6563-6e65-726566657250"
-version = "1.5.0"
+version = "1.5.2"
 
 [[deps.PrettyTables]]
 deps = ["Crayons", "LaTeXStrings", "Markdown", "PrecompileTools", "Printf", "REPL", "Reexport", "StringManipulation", "Tables"]
-git-tree-sha1 = "c5a07210bd060d6a8491b0ccdee2fa0235fc00bf"
+git-tree-sha1 = "624de6279ab7d94fc9f672f0068107eb6619732c"
 uuid = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
-version = "3.1.2"
+version = "3.3.2"
+
+    [deps.PrettyTables.extensions]
+    PrettyTablesTypstryExt = "Typstry"
+
+    [deps.PrettyTables.weakdeps]
+    Typstry = "f0ed7684-a786-439e-b1e3-3b82803b501e"
 
 [[deps.Printf]]
 deps = ["Unicode"]
@@ -2112,9 +2276,9 @@ version = "0.7.0"
 
 [[deps.ScopedValues]]
 deps = ["HashArrayMappedTries", "Logging"]
-git-tree-sha1 = "c3b2323466378a2ba15bea4b2f73b081e022f473"
+git-tree-sha1 = "ac4b837d89a58c848e85e698e2a2514e9d59d8f6"
 uuid = "7e506255-f358-4e82-b7e4-beb19740aa63"
-version = "1.5.0"
+version = "1.6.0"
 
 [[deps.Scratch]]
 deps = ["Dates"]
@@ -2124,9 +2288,9 @@ version = "1.3.0"
 
 [[deps.SentinelArrays]]
 deps = ["Dates", "Random"]
-git-tree-sha1 = "712fb0231ee6f9120e005ccd56297abbc053e7e0"
+git-tree-sha1 = "ebe7e59b37c400f694f52b58c93d26201387da70"
 uuid = "91c51154-3ec4-41a3-a24f-3f23e20d615c"
-version = "1.4.8"
+version = "1.4.9"
 
 [[deps.Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
@@ -2156,9 +2320,9 @@ version = "1.11.1"
 
 [[deps.StringManipulation]]
 deps = ["PrecompileTools"]
-git-tree-sha1 = "a3c1536470bf8c5e02096ad4853606d7c8f62721"
+git-tree-sha1 = "d05693d339e37d6ab134c5ab53c29fce5ee5d7d5"
 uuid = "892a3eda-7b42-436c-8928-eab12a02cf0e"
-version = "0.4.2"
+version = "0.4.4"
 
 [[deps.StyledStrings]]
 uuid = "f489334b-da3d-4c2e-b8f0-e476e12c162b"
@@ -2301,8 +2465,10 @@ version = "17.7.0+0"
 # ╠═79b114c9-8999-4e78-86b7-8bc0bd81dcad
 # ╠═0eec6fce-eefb-48cb-8b1e-0d77bfcb1129
 # ╠═b149a025-3b7b-4ee5-a4a5-a6bcd035ad8b
+# ╠═68a327a1-886c-4b87-9a26-0ecc97d77311
 # ╟─c1cc33d2-ad34-4ad8-b47a-6be3aa44c8ed
 # ╠═ac0a9ef8-6fbc-42f2-9433-727b235224e5
+# ╠═a691fc4c-8ac6-484a-983f-ad2f32d2e5e1
 # ╟─63062544-0375-4de4-86e3-385347033e5d
 # ╟─a91367b5-2bbf-4f17-9e04-5c939223c590
 # ╠═dac84639-2388-4ee8-9372-aae518a37f17
@@ -2341,6 +2507,7 @@ version = "17.7.0+0"
 # ╟─c2bec8e1-9df1-4f5f-8e92-0f6f5f9955a4
 # ╠═9f05e777-fb94-42f9-9cd7-b461f10f199d
 # ╠═a2284047-0aaf-41b2-a6a0-de082cdeb5a2
+# ╠═acdb7ffb-df0a-4609-8b07-87b4f3f9a145
 # ╟─cc259b71-cbe0-4990-ba6f-b495f6b0a2b7
 # ╠═9b75d562-ac45-406a-867b-b6d2af5822ee
 # ╠═c755f0b1-2299-42b4-a28d-d53980260e79
@@ -2368,6 +2535,7 @@ version = "17.7.0+0"
 # ╟─1a488045-380d-4441-a6ec-186d3c53420d
 # ╠═4e509812-7bdf-4928-bee6-55f2d142be67
 # ╠═9260398e-6842-4b11-9845-98900884b94a
+# ╠═b9ee4c0e-e556-4f67-9cce-533b1f35ed96
 # ╠═9f1aa27d-2214-4b7c-9110-1566603887d2
 # ╠═5904f5e9-93b4-479d-9fc5-58efb00f8e01
 # ╟─00000000-0000-0000-0000-000000000001
