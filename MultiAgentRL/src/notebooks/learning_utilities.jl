@@ -127,17 +127,25 @@ For general sum games, agents each receive an independent reward per step.  In o
 """
 
 # ╔═╡ f531a3c9-78a0-446f-a3a1-1170f400a949
+function reward_value(rewards::T, reducer::Function) where {T<:Real}
+	return rewards
+end
+
+function reward_value(rewards, reducer::Function)
+	return reduce(reducer, rewards)
+end
+
 function evaluate_policy_performance(game::StateStochasticGame{T, S, A, N, P, F1, F2}, πs::NTuple{N, Function}, eval_steps::Integer; use_steps::Bool = false, min_reward::T = typemin(T), reducer::Function = +) where {T<:Real, S, A, N, P, F1, F2}
 	(states, actions, rewards, sterm, nsteps) = runepisode(game; πs = πs, max_steps = eval_steps)
 	!game.isterm(sterm) && return min_reward
-	reward_sum = sum(reduce(reducer, r) for r in rewards)
+	reward_sum = sum(reward_value(r, reducer) for r in rewards)
 	episode_count = 1
 	step_count = nsteps
 	remaining_steps = eval_steps - nsteps
 	while remaining_steps > 0
 		(states, actions, rewards, sterm, nsteps) = runepisode(game; πs = πs, max_steps = remaining_steps)
 		if game.isterm(sterm) 
-			reward_sum += sum(reduce(reducer, r) for r in rewards)
+			reward_sum += sum(reward_value(r, reducer) for r in rewards)
 			episode_count += 1
 			step_count += nsteps
 		end

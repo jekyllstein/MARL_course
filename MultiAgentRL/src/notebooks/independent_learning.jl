@@ -75,7 +75,7 @@ begin
 		a = a0
 		(r, s′) = game.ptf(s, a0)
 		add_value!(joint_actions, a, 1)
-		add_value!(rewards, NTuple{N, T}(r), 1)
+		add_value!(rewards, r, 1)
 		step = 2
 		sterm = s
 		if game.isterm(s′)
@@ -90,7 +90,7 @@ begin
 			add_value!(states, s, step)
 			(r, s′, a) = game.ptf(s, πs)
 			add_value!(joint_actions, a, step)
-			add_value!(rewards, NTuple{N, T}(r), step)
+			add_value!(rewards, r, step)
 			s = s′
 			step += 1
 			if game.isterm(s′)
@@ -101,6 +101,8 @@ begin
 	end
 
 	initialize_episode_rewards(ptf::AbstractStateGameTransition{T, S, F, N}) where {T<:Real, S, F, N} = Vector{NTuple{N, T}}()
+	initialize_episode_rewards(ptf::StateCommonRewardGameTransitionDeterministic{T, S, F, N}) where {T<:Real, S, F, N} = Vector{T}()
+	initialize_episode_rewards(ptf::StateZeroSumGameTransitionDeterministic{T, S, F}) where {T<:Real, S, F} = Vector{T}()
 	
 	function TabularRL.runepisode(game::StateStochasticGame{T, S, A, N, P, F1, F2}; kwargs...) where {T<:Real, S, A, P<:AbstractStateGameTransition, F1, F2, N}
 		states = Vector{S}()
@@ -772,6 +774,14 @@ md"""
 """
 
 # ╔═╡ 1a28b9c0-ca64-4f71-bba9-a1e37a4507f8
+function reward_value(rewards::T, reducer::Function) where {T<:Real}
+	return rewards
+end
+
+function reward_value(rewards, reducer::Function)
+	return reduce(reducer, rewards)
+end
+
 function independent_vdn!(utility_params::NTuple{N, Q}, target_params::NTuple{N, Q}, game::StateStochasticGame{T, S, A, N, P, F1, F2}, γ::T, max_episodes::Integer, max_steps::Integer, feature_vectors::NTuple{N, V}, update_feature_vectors!::NTuple{N, Function}, update_action_values!::NTuple{N, Function}, update_utility_gradients!::NTuple{N, Function}; target_args::NTuple{N, Tuple} = ntuple(i -> (), N), α = one(T)/10, ϵ = one(T) / 10, buffer_size::Integer = 10_000, batch_size::Integer = 512, target_update_interval::Integer = 100, α_decay = one(T), decay_step = typemax(Int64), save_step_rewards::Bool = false, nstep::Integer = 0, ∇q̂s::NTuple{N, Q} = deepcopy(utility_params), reducer::Function = +, kwargs...) where {Q, T<:Real, S, A, N, P<:AbstractStateGameTransition, F1<:Function, F2<:Function, V}
 	#initialize memory
 	action_values = ntuple(i -> zeros(T, length(game.agent_actions[i])), N)
@@ -814,8 +824,8 @@ function independent_vdn!(utility_params::NTuple{N, Q}, target_params::NTuple{N,
 		end
 		terminated = game.isterm(s′)
 
-		#create shared reward with reduction function
-		r = reduce(reducer, rewards)
+		#create shared reward with reduction function if needed
+		r = reward_value(rewards, reducer)
 		push!(replay_buffer, (deepcopy(feature_vectors), joint_actions, r, deepcopy(feature_vectors2), terminated))
 		save_step_rewards && push!(step_rewards, r)
 		epreward += r
@@ -895,6 +905,10 @@ function independent_vdn!(utility_params::NTuple{N, Q}, target_params::NTuple{N,
 	q̂s, form_kwargs = form_agent_value_functions(game, update_feature_vectors!, update_action_values!, feature_vectors, utility_params)
 
 	return (value_functions = q̂s, episode_rewards = episode_rewards, episode_steps = episode_steps, final_parameters = deepcopy(utility_params), form_kwargs = form_kwargs)
+end
+
+function independent_vdn_common_reward!(utility_params::NTuple{N, Q}, target_params::NTuple{N, Q}, game::StateStochasticGame{T, S, A, N, StateCommonRewardGameTransitionDeterministic{T, S, F, N}, F2}, γ::T, max_episodes::Integer, max_steps::Integer, feature_vectors::NTuple{N, V}, update_feature_vectors!::NTuple{N, Function}, update_action_values!::NTuple{N, Function}, update_utility_gradients!::NTuple{N, Function}; target_args::NTuple{N, Tuple} = ntuple(i -> (), N), α = one(T)/10, ϵ = one(T) / 10, buffer_size::Integer = 10_000, batch_size::Integer = 512, target_update_interval::Integer = 100, α_decay = one(T), decay_step = typemax(Int64), save_step_rewards::Bool = false, nstep::Integer = 0, ∇q̂s::NTuple{N, Q} = deepcopy(utility_params), kwargs...) where {Q, T<:Real, S, A, N, F<:Function, F2<:Function, V}
+	return independent_vdn!(utility_params, target_params, game, γ, max_episodes, max_steps, feature_vectors, update_feature_vectors!, update_action_values!, update_utility_gradients!; target_args = target_args, α = α, ϵ = ϵ, buffer_size = buffer_size, batch_size = batch_size, target_update_interval = target_update_interval, α_decay = α_decay, decay_step = decay_step, save_step_rewards = save_step_rewards, nstep = nstep, ∇q̂s = ∇q̂s, reducer = identity, kwargs...)
 end
 
 # ╔═╡ 12fa36af-4a3d-421a-ac3d-b3c20b6f8498

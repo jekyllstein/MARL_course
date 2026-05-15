@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.24
+# v0.20.25
 
 using Markdown
 using InteractiveUtils
@@ -190,9 +190,45 @@ md"""
 
 # ╔═╡ f6de9a64-7dee-4291-815b-7a891c52a146
 begin
+	"""
+		AbstractGameTransition{T, N}
+
+	Abstract type for game transition functions in multi-agent stochastic games with N agents.
+
+	Subtypes define how joint actions and states map to next states and per-agent rewards.
+
+	# Subtypes
+	- [`AbstractTabularGameTransition`](@ref) — tabular (state-indexed) transitions
+	- [`AbstractStateGameTransition`](@ref) — non-tabular (state-based) transitions
+	"""
 	abstract type AbstractGameTransition{T<:Real, N} end
+
+	"""
+		AbstractTabularGameTransition{T, N} <: AbstractGameTransition{T, N}
+
+	Abstract type for tabular game transition functions where states are indexed by integers.
+
+	# Subtypes
+	- [`TabularGameTransition`](@ref) — lookup-table based transitions
+	- [`TabularGameTransitionSampler`](@ref) — sampling-based transitions
+	- [`AbstractTabularZeroSumGameTransition`](@ref) — two-agent zero-sum games
+	- [`AbstractTabularCommonRewardGameTransition`](@ref) — common reward games
+	"""
 	abstract type AbstractTabularGameTransition{T<:Real, N} <: AbstractGameTransition{T, N} end
 	
+	"""
+		TabularGameTransition{T, N, Np1, ST, RT} <: AbstractTabularGameTransition{T, N}
+
+	Tabular game transition function for N agents, storing state and reward
+	transition maps as N+1 dimensional arrays.
+
+	The first N dimensions index each agent's actions, and the last dimension
+	indexes the current state.
+
+	# Fields
+	- `state_transition_map::Array{ST, Np1}`: Joint action → next state mapping
+	- `reward_transition_map::Array{NTuple{N, RT}, Np1}`: Joint action → per-agent rewards
+	"""
 	struct TabularGameTransition{T<:Real, N, Np1, ST<:Union{Int64, SparseVector{T, Int64}}, RT<:Union{T, Vector{T}}} <: AbstractTabularGameTransition{T, N}
 		state_transition_map::Array{ST, Np1}
 		reward_transition_map::Array{NTuple{N, RT}, Np1}
@@ -219,6 +255,22 @@ end
 
 # ╔═╡ 28920a55-4e8c-4dfc-84a0-03eeb13b9975
 begin
+	"""
+		TabularGameTransitionSampler{T, N, F} <: AbstractTabularGameTransition{T, N}
+
+	Tabular game transition function for N agents that samples next states and
+	rewards from a provided step function that returns the rewards and index of the next state.
+
+	# Constructor
+		TabularGameTransitionSampler(step::Function, joint_action::NTuple{N, Integer})
+
+	where `step` has the signature:
+
+		step(i_s::Integer, joint_action::NTuple{N, Integer}) -> rewards::NTuple{N, Real}, i_s′::Integer
+
+	# Fields
+	- `step::F`: Function `(i_s, joint_action) -> (rewards, i_s′)`
+	"""
 	struct TabularGameTransitionSampler{T<:Real, N, F<:Function} <: AbstractTabularGameTransition{T, N}
 		step::F
 		function TabularGameTransitionSampler(step::F, a::NTuple{N, I}) where {F<:Function, N, I<:Integer}
@@ -235,12 +287,54 @@ end
 
 # ╔═╡ 0b20d83b-eef0-4006-891e-9d15282ea57b
 begin
+	"""
+		AbstractTabularCommonRewardGameTransition{T, N} <: AbstractTabularGameTransition{T, N}
+
+	Abstract type for tabular game transitions where all agents share the same reward signal.
+
+	# Subtypes
+	- [`TabularCommonRewardGameTransition`](@ref) — lookup-table based
+	- [`TabularCommonRewardGameTransitionSampler`](@ref) — sampling-based
+	"""
 	abstract type AbstractTabularCommonRewardGameTransition{T<:Real, N} <: AbstractTabularGameTransition{T, N} end 
+
+	"""
+		AbstractTabularZeroSumGameTransition{T} <: AbstractTabularGameTransition{T, 2}
+
+	Abstract type for tabular zero-sum game transitions with two agents,
+	where one agent's reward is the negative of the other's.
+
+	# Subtypes
+	- [`TabularZeroSumGameTransition`](@ref) — lookup-table based
+	- [`TabularZeroSumGameTransitionSampler`](@ref) — sampling-based
+	"""
 	abstract type AbstractTabularZeroSumGameTransition{T<:Real} <: AbstractTabularGameTransition{T, 2} end 
 end
 
 # ╔═╡ 71d96c8a-d036-45a9-95e4-bbf4ee079607
 begin
+	"""
+		TabularZeroSumGameTransitionSampler{T, F} <: AbstractTabularZeroSumGameTransition{T}
+
+	Tabular zero-sum game transition for two agents that samples next states and
+	rewards from a user-provided step function.
+
+	The inner constructor validates the step function by calling it with state
+	index 1 and the joint action `(1, 1)`, asserting that the returned `i_s′` is an
+	integer.  The reward type `T` is inferred from this test call.
+
+	# Constructor
+		TabularZeroSumGameTransitionSampler(step)
+
+	where `step` has the signature:
+
+		step(i_s::Integer, joint_action::NTuple{2, I}) -> reward::T, i_s′::Integer
+
+	where `joint_action` is a tuple of two action indices.
+
+	# Fields
+	- `step::F`: The stored step function
+	"""
 	struct TabularZeroSumGameTransitionSampler{T<:Real, F<:Function} <: AbstractTabularZeroSumGameTransition{T}
 		step::F
 		function TabularZeroSumGameTransitionSampler(step::F) where {F<:Function}
@@ -256,6 +350,29 @@ end
 
 # ╔═╡ c9b36b87-4a88-4398-95ce-4feb4f9839f7
 begin
+	"""
+		TabularCommonRewardGameTransitionSampler{T, N, F} <: AbstractTabularCommonRewardGameTransition{T, N}
+
+	Tabular common-reward game transition for N agents that samples next states and
+	rewards from a user-provided step function.
+
+	The inner constructor validates the step function by calling it with state
+	index 1 and an example joint action, asserting that the returned `i_s′` is an
+	integer.  The reward type `T` and agent count `N` are inferred from this test
+	call.
+
+	# Constructor
+		TabularCommonRewardGameTransitionSampler(step, example_joint_action)
+
+	where `step` has the signature:
+
+		step(i_s::Integer, joint_action::NTuple{N, I}) -> reward::T, i_s′::Integer
+
+	where `example_joint_action` is an example joint action used to infer `N`.
+
+	# Fields
+	- `step::F`: The stored step function
+	"""
 	struct TabularCommonRewardGameTransitionSampler{T<:Real, N, F<:Function} <: AbstractTabularCommonRewardGameTransition{T, N}
 		step::F
 		function TabularCommonRewardGameTransitionSampler(step::F, a::NTuple{N, I}) where {F<:Function, I<:Integer, N}
@@ -270,8 +387,18 @@ begin
 end
 
 # ╔═╡ 9b75d562-ac45-406a-867b-b6d2af5822ee
-#for a general sum game, the rewards are a tuple of values with one value per agent.  In a zero sum game and common reward game, there is only one reward value.  For a zero sum game that value is negative for agent 2 and positive for agent 1.  In a common reward game it is equal for all agents.
+
 begin
+	"""
+		get_game_reward(ptf, rewards, agent_index)
+
+	Extract the reward for a given agent from the transition function's reward output,
+	handling the different reward representations for each game type.
+	
+	- **General-sum tabular games**: `rewards` is an `NTuple{N, T}` — returns `rewards[agent_index]`.
+	- **Zero-sum tabular games**: `rewards` is a scalar `T` — returns `r` for agent 1 and `-r` for agent 2.
+	- **Common-reward tabular games**: `rewards` is a scalar `T` — returns `r` regardless of agent index.
+	"""
 	get_game_reward(ptf, rewards::NTuple{N, T}, n::Integer) where {N, T<:Real} = rewards[n]
 	get_game_reward(::AbstractTabularZeroSumGameTransition{T}, r::T, ::Val{1}) where T<:Real = r
 	get_game_reward(::AbstractTabularZeroSumGameTransition{T}, r::T, ::Val{2}) where T<:Real = -r
@@ -280,19 +407,85 @@ begin
 end
 
 # ╔═╡ 75726eb9-eb0e-42a3-a648-dbfce92cbd6e
+"""
+	AbstractStochasticGame{T, S, A, N, P, F}
+
+Abstract type for a complete stochastic game including state space, agent actions,
+transition function, and initialization.
+
+# Type Parameters
+- `T`: Numeric type for rewards
+- `S`: State type
+- `A`: Action type
+- `N`: Number of agents
+- `P`: Transition function type
+- `F`: Initialization function type
+
+# Subtypes
+- [`TabularStochasticGame`](@ref) — tabular (enumerated states)
+- [`StateStochasticGame`](@ref) — state-based (non-tabular)
+"""
 abstract type AbstractStochasticGame{T<:Real, S, A, N, P<:AbstractGameTransition{T, N}, F<:Function} end
 
 # ╔═╡ 9908b24b-77c4-4ece-99b5-337dc6725a13
+"""
+	get_other_inds(ptf, agent_index)
+
+Return a tuple of the indices of other agents and the state index dimension
+in the transition array.
+
+# Returns
+- `(other_inds, state_index)` where `other_inds` contains the dimensions
+  corresponding to agents other than `agent_index`, and `state_index` is the
+  dimension index of the state (always `N+1`).
+"""
 get_other_inds(ptf::AbstractTabularGameTransition{T, N}, agent_index::Integer) where {T<:Real, N} = (setdiff(1:N, agent_index), N+1)
 
 # ╔═╡ 738eadf8-7bbf-4942-a90d-e8accbb52bea
 begin
+	"""
+		AbstractStateGameTransition{T, S, F, N} <: AbstractGameTransition{T, N}
+
+	Abstract type for state-based (non-tabular) game transition functions,
+	where states are arbitrary objects rather than integer indices.
+
+	# Subtypes
+	- [`StateGameTransitionDeterministic`](@ref) — general-sum deterministic
+	- [`StateZeroSumGameTransitionDeterministic`](@ref) — two-agent zero-sum
+	- [`StateCommonRewardGameTransitionDeterministic`](@ref) — common reward
+	"""
 	abstract type AbstractStateGameTransition{T<:Real, S, F<:Function, N} <: AbstractGameTransition{T, N} end
 
+	"""
+		StateGameTransitionDeterministic{T, S, F, N} <: AbstractStateGameTransition{T, S, F, N}
+
+	State-based deterministic game transition for N agents with per-agent
+	rewards returned as a tuple.
+
+	The inner constructor validates the step function by calling it with an
+	example state and the joint action `ntuple(Returns(1), num_agents)` (every
+	agent selects action index 1).  It asserts that `s′` shares a common type
+	with `s` and that the reward tuple contains exactly `num_agents` elements.
+	The type parameters `T`, `S`, and `N` are inferred from this test call.
+
+	# Constructor
+		StateGameTransitionDeterministic(step, s, num_agents; test_joint_action = (1, 1, ...))
+
+	Option to pass a joint action to the constructor other than the first agent action for each agent
+
+	where `step` has the signature:
+
+		step(s::S, joint_action::NTuple{N, I}) -> rewards::NTuple{N, T}, s′::S
+
+	where `joint_action` is a tuple of action indices, one per agent.
+
+	# Fields
+	- `step::F`: The stored step function
+	"""
 	struct StateGameTransitionDeterministic{T<:Real, S, F<:Function, N} <: AbstractStateGameTransition{T, S, F, N}
 		step::F
-		function StateGameTransitionDeterministic(step::F, s::S, num_agents::Integer) where {F<:Function, S}
-			(r, s′) = step(s, ntuple(Returns(1), num_agents))
+		function StateGameTransitionDeterministic(step::F, s::S, num_agents::Integer; test_joint_action::NTuple{N, Integer} = ntuple(Returns(1), num_agents)) where {N, F<:Function, S}
+			(r, s′) = step(s, test_joint_action)
 			@assert promote_type(S, typeof(s′)) != Any "There is no common type between the provided state $s and the transition state $s′"
 			@assert length(r) == num_agents "The reward output length of $(length(r)) does not match the expected number of agents: $num_agents"
 			new{eltype(r), promote_type(S, typeof(s′)), F, num_agents}(step)
@@ -300,10 +493,95 @@ begin
 	end
 
 	(ptf::StateGameTransitionDeterministic{T, S, F, N})(s::S, a::NTuple{N, I}) where {T<:Real, S, F<:Function, N, I<:Integer} = ptf.step(s, a)
+
+	"""
+		StateZeroSumGameTransitionDeterministic{T, S, F} <: AbstractStateGameTransition{T, S, F, 2}
+
+	State-based deterministic zero-sum game transition for two agents,
+	where a single scalar reward is returned (positive for agent 1,
+	negative for agent 2).
+
+	The inner constructor validates the step function by calling it with an
+	example state and the joint action `(1, 1)`.  It asserts that the returned
+	reward is a scalar real value and that `s′` shares a common type with `s`.
+	The type parameters `T` and `S` are inferred from this test call.
+
+	# Constructor
+		StateZeroSumGameTransitionDeterministic(step, s; test_joint_action = (1, 1))
+
+	Option to pass a joint action to the constructor other than the first agent action for each agent
+
+	where `step` has the signature:
+
+		step(s::S, joint_action::NTuple{2, I}) -> reward::T, s′::S
+
+	where `joint_action` is a tuple of two action indices.
+
+	# Fields
+	- `step::F`: The stored step function
+	"""
+	struct StateZeroSumGameTransitionDeterministic{T<:Real, S, F<:Function} <: AbstractStateGameTransition{T, S, F, 2}
+		step::F
+		function StateZeroSumGameTransitionDeterministic(step::F, s::S; test_joint_action::Tuple{Integer, Integer} = (1, 1)) where {F<:Function, S}
+			(r, s′) = step(s, test_joint_action)
+			@assert r isa Real "The reward output must be a scalar real value representing agent 1's reward"
+			@assert promote_type(S, typeof(s′)) != Any "There is no common type between the provided state $s and the transition state $s′"
+			new{typeof(r), promote_type(S, typeof(s′)), F}(step)
+		end
+	end
+
+	(ptf::StateZeroSumGameTransitionDeterministic{T, S, F})(s::S, a::NTuple{2, I}) where {T<:Real, S, F<:Function, I<:Integer} = ptf.step(s, a)
+
+	"""
+		StateCommonRewardGameTransitionDeterministic{T, S, F, N} <: AbstractStateGameTransition{T, S, F, N}
+
+	State-based deterministic common-reward game transition for N agents,
+	where all agents receive the same scalar reward.
+
+	The inner constructor validates the step function by calling it with an
+	example state and the joint action `ntuple(Returns(1), num_agents)` (every
+	agent selects action index 1).  It asserts that the returned reward is a
+	scalar real value and that `s′` shares a common type with `s`.  The type
+	parameters `T`, `S`, and `N` are inferred from this test call.
+
+	# Constructor
+		StateCommonRewardGameTransitionDeterministic(step, s, num_agents; test_joint_action = (1, 1,...))
+
+	Option to pass a joint action to the constructor other than the first agent action for each agent
+
+	where `step` has the signature:
+
+		step(s::S, joint_action::NTuple{N, I}) -> reward::T, s′::S
+
+	where `joint_action` is a tuple of action indices, one per agent.
+
+	# Fields
+	- `step::F`: The stored step function
+	"""
+	struct StateCommonRewardGameTransitionDeterministic{T<:Real, S, F<:Function, N} <: AbstractStateGameTransition{T, S, F, N}
+		step::F
+		function StateCommonRewardGameTransitionDeterministic(step::F, s::S, num_agents::Integer; test_joint_action::NTuple{N, Integer} = ntuple(Returns(1), num_agents)) where {F<:Function, S, N}
+			(r, s′) = step(s, test_joint_action)
+			@assert r isa Real "The reward output must be a scalar real value shared by all agents"
+			@assert promote_type(S, typeof(s′)) != Any "There is no common type between the provided state $s and the transition state $s′"
+			new{typeof(r), promote_type(S, typeof(s′)), F, num_agents}(step)
+		end
+	end
+
+	(ptf::StateCommonRewardGameTransitionDeterministic{T, S, F, N})(s::S, a::NTuple{N, I}) where {T<:Real, S, F<:Function, N, I<:Integer} = ptf.step(s, a)
 end
 
 # ╔═╡ c755f0b1-2299-42b4-a28d-d53980260e79
 begin
+	"""
+		initialize_reward_history(ptf)
+	
+	Create an empty reward history vector appropriate for the given transition type.
+	
+	- For general-sum games (N agents): returns `Vector{NTuple{N, T}}()` to store per-agent reward tuples.
+	- For zero-sum games: returns `Vector{T}()` to store scalar rewards.
+	- For common-reward games: returns `Vector{T}()` to store shared scalar rewards.
+	"""
 	initialize_reward_history(::AbstractTabularGameTransition{T, N}) where {N, T<:Real} = Vector{NTuple{N, T}}()
 	initialize_reward_history(::AbstractTabularZeroSumGameTransition{T}) where T<:Real = Vector{T}()
 	initialize_reward_history(::AbstractTabularCommonRewardGameTransition{T}) where T<:Real = Vector{T}()
@@ -326,6 +604,22 @@ function TabularRL.TabularDeterministicTransition(ptf::TabularGameDeterministicT
 end
 
 # ╔═╡ 11b17cb5-30fa-4a66-bf71-52b4dc9f2f02
+"""
+	sample_joint_action(πs, i_s)
+
+Sample a joint action from per-agent policies at state index `i_s`.
+
+Each element of the returned tuple is the action index sampled from the
+corresponding agent's policy matrix.
+
+# Arguments
+- `πs::NTuple{N, AbstractMatrix{T}}`: Per-agent policy matrices, where
+  `πs[n][i_a, i_s]` is the probability agent `n` selects action index `i_a` in state index `i_s`.
+- `i_s::Integer`: The current state index.
+
+# Returns
+- `joint_action::NTuple{N, Int64}`: A tuple of action indices, one per agent.
+"""
 sample_joint_action(πs::NTuple{N, M}, i_s::Integer) where {N, T<:Real, M <:AbstractMatrix{T}} = NTuple{N, Int64}(sample_action(πs[n], i_s) for n in 1:N)
 
 # ╔═╡ dd64a78d-a8f1-4b9b-aa8b-95ee48936268
@@ -337,6 +631,24 @@ end
 
 # ╔═╡ c42b7d58-922d-4b17-a03c-62433c9adeb9
 begin
+	"""
+		TabularZeroSumGameTransition{T, ST, RT} <: AbstractTabularZeroSumGameTransition{T}
+
+	Tabular two-player zero-sum game transition storing state and reward maps
+	as 3-dimensional arrays indexed by (agent 1 action index, agent 2 action index, state index).
+
+	The reward is a single scalar value: positive for agent 1, negative for agent 2.
+
+	The following type aliases fix the `ST` and `RT` parameters for common cases:
+	- `TabularZeroSumGameDeterministicTransition{T}` = `TabularZeroSumGameTransition{T, Int64, T}`
+	  (deterministic with `ST = Int64` for single next state index, `RT = T` for scalar reward)
+	- `TabularZeroSumGameStochasticTransition{T}` = `TabularZeroSumGameTransition{T, SparseVector{T, Int64}, Vector{T}}`
+	  (stochastic with `ST = SparseVector` for transition probabilities, `RT = Vector{T}` for per-outcome rewards)
+
+	# Fields
+	- `state_transition_map::Array{ST, 3}`: Next state index indexed by (agent 1 action index, agent 2 action index, current state index)
+	- `reward_transition_map::Array{RT, 3}`: Scalar reward indexed by (agent 1 action index, agent 2 action index, current state index)
+	"""
 	struct TabularZeroSumGameTransition{T<:Real, ST<:Union{Int64, SparseVector{T, Int64}}, RT<:Union{T, Vector{T}}} <: AbstractTabularZeroSumGameTransition{T}
 		state_transition_map::Array{ST, 3}
 		reward_transition_map::Array{RT, 3}
@@ -365,11 +677,30 @@ end
 
 # ╔═╡ 6f98c460-6d48-457d-a40c-6b8588fb01ef
 begin
+	"""
+		TabularCommonRewardGameTransition{T, N, Np1, ST, RT} <: AbstractTabularCommonRewardGameTransition{T, N}
+
+	Tabular common-reward game transition for N agents storing state and reward
+	maps as N+1 dimensional arrays indexed by
+	(agent 1 action index, ..., agent N action index, state index).
+
+	All agents share the same scalar reward value.
+
+	The following type aliases fix the `ST` and `RT` parameters for common cases:
+	- `TabularCommonRewardGameDeterministicTransition{T, N, Np1}` = `TabularCommonRewardGameTransition{T, N, Np1, Int64, T}`
+	  (deterministic with `ST = Int64` for single next state index, `RT = T` for scalar reward)
+	- `TabularCommonRewardGameStochasticTransition{T, N, Np1}` = `TabularCommonRewardGameTransition{T, N, Np1, SparseVector{T, Int64}, Vector{T}}`
+	  (stochastic with `ST = SparseVector` for transition probabilities, `RT = Vector{T}` for per-outcome rewards)
+
+	# Fields
+	- `state_transition_map::Array{ST, Np1}`: Next state index indexed by (agent 1 action index, ..., agent N action index, current state index)
+	- `reward_transition_map::Array{RT, Np1}`: Shared scalar reward indexed by (agent 1 action index, ..., agent N action index, current state index)
+	"""
 	struct TabularCommonRewardGameTransition{T<:Real, N, Np1, ST<:Union{Int64, SparseVector{T, Int64}}, RT<:Union{T, Vector{T}}} <: AbstractTabularCommonRewardGameTransition{T, N}
 		state_transition_map::Array{ST, Np1}
 		reward_transition_map::Array{RT, Np1}
 		function TabularCommonRewardGameTransition(state_transition_map::Array{ST, Np1}, reward_transition_map::Array{RT, Np1}) where {T<:Real, Np1, ST<:Union{Int64, SparseVector{T, Int64}}, RT <: Union{T, Vector{T}}}
-			new{T, Np1-1, N, ST, RT}(state_transition_map, reward_transition_map)
+			new{T, Np1-1, Np1, ST, RT}(state_transition_map, reward_transition_map)
 		end
 	end
 
@@ -415,6 +746,37 @@ end
 
 # ╔═╡ 79888a7b-c604-4db2-932a-ee9bfd378d9e
 begin
+	"""
+		TabularStochasticGame{T, S, A, N, P, F} <: AbstractStochasticGame{T, S, A, N, P, F}
+
+	Complete stochastic game with enumerated states and tabular transition function.
+
+	Stores the full list of states, per-agent action spaces, a tabular game transition
+	function, initialization and termination logic, and lookup tables for converting
+	states and actions to their integer indices.
+
+	Multiple convenience constructors are provided:
+	- `TabularStochasticGame(states, agent_actions, ptf, initialize_state_index, terminal_states)`
+	  — full specification with all fields
+	- `TabularStochasticGame(states, agent_actions, ptf, terminal_states)`
+	  — initial state index sampled uniformly from `1:length(states)`
+	- `TabularStochasticGame(states, agent_actions, ptf, initialize_state_index)`
+	  — terminal states default is `BitVector(undef, length(states))` (no terminal states)
+	- `TabularStochasticGame(states, agent_actions, ptf)`
+	  — both initialization and terminal states use defaults
+
+	Lookup tables `state_index` and `action_index` are automatically generated from
+	the provided `states` and `agent_actions` unless explicitly overridden with keyword arguments.
+
+	# Fields
+	- `states::Vector{S}`: Enumerated state space
+	- `agent_actions::NTuple{N, Vector{A}}`: Available actions for each agent
+	- `ptf::P`: Tabular game transition function
+	- `initialize_state_index::F`: Function returning the index of the initial state
+	- `terminal_states::BitVector`: Boolean vector marking terminal states
+	- `state_index::Dict{S, Int64}`: State → index lookup table
+	- `action_index::NTuple{N, Dict{A, Int64}}`: Per-agent action → index lookup tables
+	"""
 	struct TabularStochasticGame{T<:Real, S, A, N, P<:AbstractTabularGameTransition{T, N}, F<:Function} <: AbstractStochasticGame{T, S, A, N, P, F}
 		states::Vector{S}
 		agent_actions::NTuple{N, Vector{A}}
@@ -429,12 +791,31 @@ begin
 
 	TabularStochasticGame(states::Vector{S}, agent_actions::NTuple{N, Vector{A}}, ptf::P, terminal_states::BitVector; state_index::Dict{S, Int64} = makelookup(states), action_index::NTuple{N, Dict{A, Int64}} = Tuple(makelookup(a) for a in agent_actions)) where {S, A, N, P<:AbstractTabularGameTransition} = TabularStochasticGame(states, agent_actions, ptf, Returns(1:length(states)), terminal_states, state_index, action_index)
 
-	TabularStochasticGame(states::Vector{S}, agent_actions::NTuple{N, Vector{A}}, ptf::P, initialize_state_index::F; state_index::Dict{S, Int64} = makelookup(states), action_index::NTuple{N, Dict{A, Int64}} = Tuple(makelookup(a) for a in agent_actions)) where {S, A, N, P<:AbstractTabularGameTransition, F<:Function} = TabularStochasticGame(states, agent_aactions, ptf, initialize_state_index, BitMatrix(undef, length(states)), state_index, action_index)
+	TabularStochasticGame(states::Vector{S}, agent_actions::NTuple{N, Vector{A}}, ptf::P, initialize_state_index::F; state_index::Dict{S, Int64} = makelookup(states), action_index::NTuple{N, Dict{A, Int64}} = Tuple(makelookup(a) for a in agent_actions)) where {S, A, N, P<:AbstractTabularGameTransition, F<:Function} = TabularStochasticGame(states, agent_actions, ptf, initialize_state_index, BitVector(undef, length(states)), state_index, action_index)
 
-	TabularStochasticGame(states::Vector{S}, agent_actions::NTuple{N, Vector{A}}, ptf::P; state_index::Dict{S, Int64} = makelookup(states), action_index::NTuple{N, Dict{A, Int64}} = Tuple(makelookup(a) for a in agent_actions)) where {S, A, N, P<:AbstractTabularGameTransition} = TabularStochasticGame(states, agent_actions, ptf, Returns(1:length(states)), BitMatrix(undef, length(states)), state_index, action_index)
+	TabularStochasticGame(states::Vector{S}, agent_actions::NTuple{N, Vector{A}}, ptf::P; state_index::Dict{S, Int64} = makelookup(states), action_index::NTuple{N, Dict{A, Int64}} = Tuple(makelookup(a) for a in agent_actions)) where {S, A, N, P<:AbstractTabularGameTransition} = TabularStochasticGame(states, agent_actions, ptf, Returns(1:length(states)), BitVector(undef, length(states)), state_index, action_index)
 end
 
 # ╔═╡ 2bfa6ee7-d580-4ea0-9551-28c34570dc1e
+"""
+	create_non_repeated_zero_sum_game(reward_matrix, agent_actions)
+
+Create a single-state zero-sum stochastic game with terminal state for a
+non-repeated (one-shot) matrix game.
+
+The game has two states: `:play` (initial) and `:term` (terminal).
+The transition always goes from `:play` to `:term` regardless of the joint action,
+so the game lasts exactly one step.
+
+# Arguments
+- `reward_matrix::Matrix{T}`: The `(n_actions_1 × n_actions_2)` payoff matrix
+  (positive values favor agent 1, negative favor agent 2).
+- `agent_actions::NTuple{2, Vector{A}}`: Available actions for each agent.
+
+# Returns
+- `TabularStochasticGame{T, Symbol, A, 2, TabularZeroSumGameTransition, F}`:
+  A zero-sum stochastic game with two states.
+"""
 function create_non_repeated_zero_sum_game(reward_matrix::Matrix{T}, agent_actions::NTuple{2, Vector{A}}) where {A, T<:Real}
 	(na1, na2) = size(reward_matrix)
 
@@ -469,6 +850,25 @@ RockPaperScissors.non_repeated_game.ptf(1, (3, 2))
   ╠═╡ =#
 
 # ╔═╡ 9f05e777-fb94-42f9-9cd7-b461f10f199d
+"""
+	create_non_repeated_game(reward_matrices, agent_actions)
+
+Create a single-state general-sum stochastic game with terminal state for a
+non-repeated (one-shot) matrix game with N agents.
+
+The game has two states: `:play` (initial) and `:term` (terminal).
+The transition always goes from `:play` to `:term` regardless of the joint action,
+so the game lasts exactly one step.
+
+# Arguments
+- `reward_matrices::NTuple{N, Matrix{T}}`: Per-agent payoff matrices, each of
+  shape `(n_actions_1 × ⋯ × n_actions_N)`.
+- `agent_actions::NTuple{N, Vector{A}}`: Available actions for each agent.
+
+# Returns
+- `TabularStochasticGame{T, Symbol, A, N, TabularGameTransition, F}`:
+  A general-sum stochastic game with two states.
+"""
 function create_non_repeated_game(reward_matrices::NTuple{N, Matrix{T}}, agent_actions::NTuple{N, Vector{A}}) where {A, T<:Real, N}
 	ns = size(first(reward_matrices))
 
@@ -495,6 +895,14 @@ create_non_repeated_game(([1. -1.; -1. 1.], [-1. 1.; 1. -1.]), ([1, 2], [1, 2]))
   ╠═╡ =#
 
 # ╔═╡ 3f44f098-5aef-4287-901e-67a6062f0f02
+"""
+	make_random_policies(game::TabularStochasticGame)
+
+Create a tuple of uniformly random policy matrices for each agent.  In a tabular setting, a policy is represented as a matrix where each column corresponds to a state and each row corresponds to an action.  The entry at (i_a, i_s) gives the probability of selecting action i_a in state i_s.
+
+Each policy matrix has shape `(n_actions[n], n_states)` where all entries are
+`1 / n_actions[n]`, representing a uniform distribution over actions for every state.
+"""
 function make_random_policies(game::TabularStochasticGame{T, S, A, N, P, F}) where {T<:Real, S, A, P, F, N}
 	n_actions = Tuple(length(a) for a in game.agent_actions)
 	n_states = length(game.states)
@@ -502,6 +910,13 @@ function make_random_policies(game::TabularStochasticGame{T, S, A, N, P, F}) whe
 end
 
 # ╔═╡ d95d9945-944a-497b-b07b-7b4d4eb1f01d
+"""
+	initialize_agent_action_values(game::TabularStochasticGame, init_value)
+
+Create a tuple of Q-value matrices initialized to a constant value for each agent.  In a tabular setting, an agent's Q-value function is represented as a matrix where each column corresponds to a state and each row corresponds to an action.  The entry at (i_a, i_s) gives the estimated value of taking action i_a in state i_s for that particular agent.
+
+Each matrix has shape `(n_actions[n], n_states)` filled with `init_value`.
+"""
 function initialize_agent_action_values(game::TabularStochasticGame{T, S, A, N, P, F}, init_value::T) where {T<:Real, S, A, P, F<:Function, N}
 	n_actions = NTuple{N, Int64}(length(a) for a in game.agent_actions)
 	n_states = length(game.states)
@@ -695,25 +1110,77 @@ end
 
 # ╔═╡ 736aacc0-5592-4439-b8c3-cf76525983a5
 begin
+	"""
+		StateStochasticGame{T, S, A, N, P, StateInit, IsTerm} <: AbstractStochasticGame{T, S, A, N, P, StateInit}
+
+	Complete stochastic game with state-based (non-tabular) transition function,
+	where states are arbitrary objects rather than enumerated state indices.
+
+	Unlike [`TabularStochasticGame`](@ref), the state space is not explicitly
+	enumerated.  Instead, `initialize_state` returns a concrete state object,
+	and `isterm` is a predicate function that determines whether a state is
+	terminal.
+
+	Per-agent validity predicates `is_valid_action` can be provided to restrict
+	which actions are available in a given state.
+
+	# Fields
+	- `agent_actions::NTuple{N, Vector{A}}`: Available actions for each agent
+	- `ptf::P`: State-based game transition function
+	- `initialize_state::StateInit`: Function returning the initial state
+	- `isterm::IsTerm`: Predicate function `isterm(s) -> Bool` for terminal state detection
+	- `agent_action_index::NTuple{N, Dict{A, Int64}}`: Per-agent action → index lookup tables
+	- `is_valid_action::NTuple{N, Function}`: Per-agent action validity predicates
+	"""
 	struct StateStochasticGame{T<:Real, S, A, N, P<:AbstractStateGameTransition{T, S, F, N} where F<:Function, StateInit<:Function, IsTerm<:Function} <: AbstractStochasticGame{T, S, A, N, P, StateInit}
 		agent_actions::NTuple{N, Vector{A}}
 		ptf::P
 		initialize_state::StateInit
 		isterm::IsTerm
 		agent_action_index::NTuple{N, Dict{A, Int64}} #lookup table mapping actions to their index for each agent
+		is_valid_action::NTuple{N, Function}
 	end
 
 	#automatically generate the action lookup when constructing MDP
-	function StateStochasticGame(agent_actions::NTuple{N, A}, ptf::AbstractStateGameTransition{T, S, F, N}, initialize_state::StateInit, isterm::IsTerm; agent_action_index = Tuple(makelookup(a) for a in agent_actions)) where {T<:Real, S, F<:Function, N, A<:AbstractVector, StateInit<:Function, IsTerm<:Function}
+	"""
+		StateStochasticGame(agent_actions, ptf, initialize_state, isterm; kwargs...)
+
+	Construct a state-based stochastic game with explicit terminal state predicate.
+
+	The inner constructor validates the initial state type against the transition
+	function's state type parameter `S`.
+
+	# Constructor
+		StateStochasticGame(agent_actions, ptf, initialize_state, isterm;
+		                    agent_action_index = Tuple(makelookup(a) for a in agent_actions),
+		                    is_valid_action = ntuple(i -> (s, i_a) -> true, N))
+
+	# Arguments
+	- `agent_actions::NTuple{N, AbstractVector}`: Available actions per agent
+	- `ptf::AbstractStateGameTransition`: State-based transition function
+	- `initialize_state::Function`: Function `() -> s::S` returning the initial state
+	- `isterm::Function`: Function `isterm(s::S) -> Bool`
+	"""
+	function StateStochasticGame(agent_actions::NTuple{N, A}, ptf::AbstractStateGameTransition{T, S, F, N}, initialize_state::StateInit, isterm::IsTerm; agent_action_index = Tuple(makelookup(a) for a in agent_actions), is_valid_action = ntuple(i -> (s, i_a) -> true, N)) where {T<:Real, S, F<:Function, N, A<:AbstractVector, StateInit<:Function, IsTerm<:Function}
 		s0 = initialize_state()
 		isterm(s0)
 		@assert typeof(s0) <: S
-		StateStochasticGame(Tuple(Vector(a) for a in agent_actions), ptf, initialize_state, isterm, agent_action_index)
+		StateStochasticGame(Tuple(Vector(a) for a in agent_actions), ptf, initialize_state, isterm, agent_action_index, is_valid_action)
 	end
 
 	#if terminal check is not provided assume there are no terminal states
 	StateStochasticGame(agent_actions::NTuple{N, A}, ptf::AbstractStateGameTransition{T, S, F, N}, initialize_state::StateInit; kwargs...) where {T<:Real, S, F<:Function, N, A<:AbstractVector, StateInit<:Function} = StateStochasticGame(agent_actions, ptf, initialize_state, Returns(false); kwargs...)
 
+	"""
+		StateStochasticGame(game::TabularStochasticGame)
+
+	Convert a [`TabularStochasticGame`](@ref) with a tabular deterministic transition
+	into an equivalent [`StateStochasticGame`](@ref).
+
+	A step function is constructed that looks up the state index, applies the tabular
+	transition map, and returns the actual state object.  The conversion preserves
+	action indices from the original game's lookup tables.
+	"""
 	function StateStochasticGame(game::TabularStochasticGame{T, S, A, N, P, F}) where {T<:Real, S, A, N, P<:TabularGameDeterministicTransition, F<:Function}
 		agent_actions = game.agent_actions
 		initialize_state() = game.states[game.initialize_state_index()]
@@ -727,7 +1194,51 @@ begin
 		end
 		
 		ptf = StateGameTransitionDeterministic(step, initialize_state(), N)
-		StateStochasticGame(agent_actions, ptf, initialize_state, isterm, game.action_index)
+		StateStochasticGame(agent_actions, ptf, initialize_state, isterm; agent_action_index = game.action_index)
+	end
+
+	"""
+		StateStochasticGame(game::TabularStochasticGame)
+
+	Convert a tabular zero-sum deterministic stochastic game into a state-based
+	[`StateStochasticGame`](@ref) using [`StateZeroSumGameTransitionDeterministic`](@ref).
+	"""
+	function StateStochasticGame(game::TabularStochasticGame{T, S, A, 2, P, F}) where {T<:Real, S, A, P<:TabularZeroSumGameDeterministicTransition, F<:Function}
+		agent_actions = game.agent_actions
+		initialize_state() = game.states[game.initialize_state_index()]
+		isterm(s::S) = game.terminal_states[game.state_index[s]]
+	
+		function step(s::S, a::NTuple{2, Int64})
+			i_s = game.state_index[s]
+			i_s′ = game.ptf.state_transition_map[a..., i_s]
+			r = game.ptf.reward_transition_map[a..., i_s]
+			return r, game.states[i_s′]
+		end
+		
+		ptf = StateZeroSumGameTransitionDeterministic(step, initialize_state())
+		StateStochasticGame(agent_actions, ptf, initialize_state, isterm; agent_action_index = game.action_index)
+	end
+
+	"""
+		StateStochasticGame(game::TabularStochasticGame)
+
+	Convert a tabular common-reward deterministic stochastic game into a state-based
+	[`StateStochasticGame`](@ref) using [`StateCommonRewardGameTransitionDeterministic`](@ref).
+	"""
+	function StateStochasticGame(game::TabularStochasticGame{T, S, A, N, P, F}) where {T<:Real, S, A, N, P<:TabularCommonRewardGameDeterministicTransition, F<:Function}
+		agent_actions = game.agent_actions
+		initialize_state() = game.states[game.initialize_state_index()]
+		isterm(s::S) = game.terminal_states[game.state_index[s]]
+	
+		function step(s::S, a::NTuple{N, Int64})
+			i_s = game.state_index[s]
+			i_s′ = game.ptf.state_transition_map[a..., i_s]
+			r = game.ptf.reward_transition_map[a..., i_s]
+			return r, game.states[i_s′]
+		end
+		
+		ptf = StateCommonRewardGameTransitionDeterministic(step, initialize_state(), N)
+		StateStochasticGame(agent_actions, ptf, initialize_state, isterm; agent_action_index = game.action_index)
 	end
 end
 
@@ -736,30 +1247,49 @@ StateStochasticGame(create_non_repeated_game(([1. -1.; -1. 1.], [-1. 1.; 1. -1.]
 
 # ╔═╡ 39182e4e-6ee9-4c14-8b5f-3164e38d5b5a
 begin
-	convert_multiagent_transition(mdp::StateStochasticGame{T, S, A, N, P, F1, F2}, joint_step::Function) where {T<:Real, S, A, N, P<:StateGameTransitionDeterministic, F1<:Function, F2<:Function} = StateMDPTransitionDeterministic(joint_step, mdp.initialize_state())
+	convert_multiagent_transition(game::StateStochasticGame{T, S, A, N, P, F1, F2}, joint_step::Function) where {T<:Real, S, A, N, P<:StateGameTransitionDeterministic, F1<:Function, F2<:Function} = StateMDPTransitionDeterministic(joint_step, game.initialize_state())
 
-	#add other transition types later
+	convert_multiagent_transition(game::StateStochasticGame{T, S, A, N, P, F1, F2}, joint_step::Function) where {T<:Real, S, A, N, P<:StateCommonRewardGameTransitionDeterministic, F1<:Function, F2<:Function} = StateMDPTransitionDeterministic(joint_step, game.initialize_state())
 end
 
 # ╔═╡ 0bb34d75-0422-4336-9e62-d6431ce2b1c3
 #convert a multi-agent state mdp into an mdp using a scalar reward function
-function TabularRL.StateMDP(mdp::StateStochasticGame{T, S, A, N, P, F1, F2}, reward_function::Function) where {T<:Real, S, A, N, P<:AbstractStateGameTransition, F1<:Function, F2<:Function}
-	agent_actions = mdp.agent_actions
-	num_actions = Tuple(length(a) for a in agent_actions)
-	joint_action_matrix = Array{A, N}(undef, num_actions...)
-	inds = CartesianIndices(joint_action_matrix)
-	joint_action_list = [Tuple(agent_actions[i][inds[n][i]] for i in 1:N) for n in 1:length(joint_action_matrix)]
+begin
+	function TabularRL.StateMDP(mdp::StateStochasticGame{T, S, A, N, P, F1, F2}, reward_function::Function) where {T<:Real, S, A, N, P<:AbstractStateGameTransition, F1<:Function, F2<:Function}
+		agent_actions = mdp.agent_actions
+		num_actions = Tuple(length(a) for a in agent_actions)
+		joint_action_matrix = Array{A, N}(undef, num_actions...)
+		inds = CartesianIndices(joint_action_matrix)
+		joint_action_list = [Tuple(agent_actions[i][inds[n][i]] for i in 1:N) for n in 1:length(joint_action_matrix)]
 
-	function joint_step(s::S, i_a::Integer)
-		a = CartesianIndices(joint_action_matrix)[i_a] |> Tuple
-		(rewards, s′) = mdp.ptf.step(s, a)
-		r = reward_function(rewards)
-		return (r, s′)
+		function joint_step(s::S, i_a::Integer)
+			a = CartesianIndices(joint_action_matrix)[i_a] |> Tuple
+			(rewards, s′) = mdp.ptf.step(s, a)
+			r = reward_function(rewards)
+			return (r, s′)
+		end
+
+		ptf = convert_multiagent_transition(mdp, joint_step)
+		
+		StateMDP(joint_action_list, ptf, mdp.initialize_state, mdp.isterm)
 	end
+	function TabularRL.StateMDP(mdp::StateStochasticGame{T, S, A, N, P, F1, F2}) where {T<:Real, S, A, N, P<:StateCommonRewardGameTransitionDeterministic, F1<:Function, F2<:Function}
+		agent_actions = mdp.agent_actions
+		num_actions = Tuple(length(a) for a in agent_actions)
+		joint_action_matrix = Array{A, N}(undef, num_actions...)
+		inds = CartesianIndices(joint_action_matrix)
+		joint_action_list = [Tuple(agent_actions[i][inds[n][i]] for i in 1:N) for n in 1:length(joint_action_matrix)]
 
-	ptf = convert_multiagent_transition(mdp, joint_step)
-	
-	StateMDP(joint_action_list, ptf, mdp.initialize_state, mdp.isterm)
+		function joint_step(s::S, i_a::Integer)
+			a = CartesianIndices(joint_action_matrix)[i_a] |> Tuple
+			(r, s′) = mdp.ptf.step(s, a)
+			return (r, s′)
+		end
+
+		ptf = convert_multiagent_transition(mdp, joint_step)
+		
+		StateMDP(joint_action_list, ptf, mdp.initialize_state, mdp.isterm)
+	end
 end
 
 # ╔═╡ 79b114c9-8999-4e78-86b7-8bc0bd81dcad
@@ -774,7 +1304,16 @@ module LevelBasedForaging
 	import ..TabularGameTransition
 	import ..TabularStochasticGame
 
-	#simple empty types to specify the six LBF moves
+	"""
+		ForagingMove
+
+	Abstract type for the six movement/action primitives in Level-Based Foraging.
+
+	# Subtypes
+	- [`Up`](@ref), [`Down`](@ref), [`Left`](@ref), [`Right`](@ref) — cardinal movement
+	- [`Collect`](@ref) — collect an adjacent item
+	- [`Noop`](@ref) — stand still
+	"""
 	abstract type ForagingMove end
 	struct Up <: ForagingMove end
 	struct Down <: ForagingMove end
@@ -791,7 +1330,26 @@ module LevelBasedForaging
 	const action_tuple = (Up(), Down(), Left(), Right(), Collect(), Noop())
 	const action_index = makelookup(action_list)
 
-	#a state in the LBF environment must track the location of each agent and item.  Associated with every entity is also a level.  To aid the environment step function, the state also stores a Set of available positions to agents and the valid positions to collect each item.  During state transitions, all of these will remain fixed in the new state except `item_collect` and `available_positions`
+	"""
+		ForagingState{N, M, X, Y}
+
+	State representation for the Level-Based Foraging environment.
+
+	Tracks N agent positions and M item positions on an X × Y grid world.
+	Each agent and item has an associated integer level.  Items that have been
+	collected are marked by `item_collect`.
+
+	The type parameters `N`, `M`, `X`, `Y` are used for dispatch and to enable
+	compile-time optimizations: `ForagingState{3, 5, 8, 8}` is a different type
+	from `ForagingState{2, 2, 11, 11}`.
+
+	# Fields
+	- `agent_positions::NTuple{N, Position}`: Grid positions of each agent
+	- `item_positions::NTuple{M, Position}`: Grid positions of each item
+	- `item_collect::NTuple{M, Bool}`: Whether each item has been collected
+	- `agent_levels::NTuple{N, Int64}`: Level of each agent (contribution to collection)
+	- `item_levels::NTuple{M, Int64}`: Required level to collect each item
+	"""
 	struct ForagingState{N, M, X, Y}
 		agent_positions::NTuple{N, Position}
 		item_positions::NTuple{M, Position}
@@ -1013,7 +1571,31 @@ module LevelBasedForaging
 		return NTuple{N, Float32}(rewards), ForagingState(agent_positions′, s.item_positions, item_collect′, s.agent_levels, s.item_levels, X, Y)
 	end
 
-	#make an environment for LBF as a Multi Agent MDP
+	"""
+		make_environment(; kwargs...)
+
+	Create a Level-Based Foraging environment as a [`StateStochasticGame`](@ref)
+	using a state-based deterministic transition function.
+
+	Keyword arguments configure the grid size, number of agents, number of items,
+	and level distributions.
+
+	# Keywords
+	- `width::Integer = 8`: Grid width
+	- `height::Integer = 8`: Grid height
+	- `num_agents::Integer = 3`: Number of agents
+	- `num_items::Integer = 5`: Number of items
+	- `min_agent_level::Integer = 1`: Minimum agent level
+	- `max_agent_level::Integer = 2`: Maximum agent level
+	- `min_item_level::Integer = 1`: Minimum item level
+	- `max_item_level::Integer = 4`: Maximum item level
+	- `reset_chance::Real = 0.0`: Probability of resetting all items at each step
+	- `force_cooperation::Bool = false` (passed via kwargs): If true, forces items
+	  to require cooperation by setting minimum item level above max agent level
+
+	# Returns
+	- `StateStochasticGame{...}`: A state-based stochastic game with LBF dynamics
+	"""
 	function make_environment(;width = 8, height = 8, num_agents = 3, num_items = 5, min_agent_level = 1, max_agent_level = 2, min_item_level = 1, max_item_level = 4, reset_chance = 0f0, kwargs...)
 		init_state() = initialize_state(width, height, num_agents, num_items, min_agent_level, max_agent_level, min_item_level, max_item_level; kwargs...)
 
@@ -1023,6 +1605,20 @@ module LevelBasedForaging
 	end
 
 	#make an environment for LBF based on example 5.3 which always uses the same initial state with 2 agents and 2 items in an 11x11 grid.  The tabular state space is constructed by iterating through all agent positions with all possible item combinations
+	"""
+		make_5_3_environment(;width=11, height=11)
+
+	Create a tabular Level-Based Foraging environment matching Example 5.3 from
+	the textbook "Multi-Agent Reinforcement Learning" with:
+	- 2 agents (levels 1 and 1)
+	- 2 items (levels 1 and 2)
+	- 11×11 grid world
+	- Predefined initial positions
+
+	The environment is converted to a [`TabularStochasticGame`](@ref) with 
+	enumerated states for exact solution methods. States track agent positions
+	and item collection status.
+	"""
 	function make_5_3_environment(;width = 11, height = 11)
 		num_agents = 2
 		num_items = 2
@@ -1126,6 +1722,19 @@ module LevelBasedForaging
 		TabularStochasticGame(states, actions, ptf, initialize_state_index, terminal_states; state_index = state_index)
 	end
 
+	"""
+		make_small_environment(;width=3, height=3)
+
+	Create a minimal tabular Level-Based Foraging environment for quick testing:
+	- 2 agents (both level 1)
+	- 1 item (level 2) 
+	- 3×3 grid world
+	- Predefined initial positions
+
+	The small state space makes this suitable for debugging and algorithm 
+	validation. Converted to a [`TabularStochasticGame`](@ref) with enumerated
+	states.
+	"""
 	function make_small_environment(;width = 3, height = 3)
 		num_agents = 2
 		num_items = 1
@@ -1389,7 +1998,15 @@ module TwoPlayerSoccer
 	import ..TabularStochasticGame
 	import ..SparseVector
 	
+	"""
+		Move
 
+	Abstract type for the five movement primitives in Two-Player Soccer.
+
+	# Subtypes
+	- [`Up`](@ref), [`Down`](@ref), [`Left`](@ref), [`Right`](@ref) — cardinal movement
+	- [`Noop`](@ref) — stand still
+	"""
 	abstract type Move end
 	struct Up <: Move end
 	struct Down <: Move end
@@ -1405,6 +2022,19 @@ module TwoPlayerSoccer
 
 	const action_list_tuple = (Up(), Down(), Left(), Right(), Noop())
 
+	"""
+		State{Width, Height, GoalHeight}
+
+	State representation for the Two-Player Soccer environment.
+
+	Tracks the grid positions of both agents and which agent currently has
+	the ball.  The type parameters encode the grid dimensions and goal height,
+	enabling compile-time dispatch for different field configurations.
+
+	# Fields
+	- `agent_positions::Tuple{Position, Position}`: (x, y) positions of agent 1 and agent 2
+	- `agent1_ball::Bool`: Whether agent 1 currently possesses the ball
+	"""
 	struct State{Width, Height, GoalHeight}
 		agent_positions::Tuple{Position, Position}
 		agent1_ball::Bool
