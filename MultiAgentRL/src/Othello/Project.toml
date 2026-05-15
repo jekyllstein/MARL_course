@@ -1,0 +1,9 @@
+name = "Othello"
+uuid = "3d11e2c2-9a82-4dfb-9faa-d12fcb0535f5"
+version = "0.1.0"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
